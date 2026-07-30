@@ -2,11 +2,12 @@
 
 ## Positioning
 
-> PixLog is Git-like version control for images, pixels, and AI generation workflows.
+> PixLog is Git-native visual history and generation provenance for image assets.
 
 The primary audience is developers, AI creators, design engineers, and teams that
-need source-control behavior for image assets. PixLog is not trying to replace a
-general photo library in its first releases.
+already use Git but need image-aware diffs, large-media transport, and provenance.
+PixLog extends Git rather than implementing a parallel VCS. It is not trying to
+replace a general photo library in its first releases.
 
 ## Product Principles
 
@@ -17,15 +18,17 @@ general photo library in its first releases.
 4. Keep the default workflow local, scriptable, machine-readable, and auditable.
 5. Move immutable objects before mutable refs during synchronization.
 6. Degrade capabilities explicitly by format instead of claiming uniform support.
+7. Keep Git as the only commit, branch, index, and ref authority.
 
 ## Target Object Model
 
-Every asset version should carry at least:
+Every asset version carries content and manifest references and may carry richer
+provenance:
 
 - `content_oid`: exact source-file SHA-256 for restore, deduplication, and sync.
 - `manifest_oid`: decoded format, dimensions, color/metadata/capability facts.
 - `visual_hash`: canonical or perceptual identity for similarity lookup only.
-- `recipe_oid`: canonical workflow JSON identity.
+- `recipe_oid`: optional canonical workflow JSON identity.
 - Parent/reference/mask OIDs for a future cross-asset lineage DAG.
 
 Perceptual hashes must never be used as integrity or security identities.
@@ -80,8 +83,9 @@ bytes.
 
 ## Recipe and Provenance
 
-The repository sidecar is authoritative; embedded metadata is a portable copy.
-A recipe should be able to record:
+The recipe CAS object referenced by the committed pointer is authoritative;
+embedded metadata is an import source and portable copy. A recipe should be able
+to record:
 
 - prompt and negative prompt;
 - exact model/LoRA/VAE/ControlNet/embedding hashes and licenses;
@@ -103,9 +107,11 @@ Capture reliability order:
 
 ## Synchronization Target
 
-Metadata and refs remain small; large immutable objects use content addressing.
-Target transports are local directory, SSH, Azure Blob, S3-compatible storage, NAS,
-self-hosted HTTP, and optionally Git LFS Batch API.
+Git transports commits and pointers. PixLog uploads immutable blob, manifest, and
+recipe objects before Git pushes refs. The implemented transports are local/file
+CAS and an HTTP LFS-style Batch client. Direct S3-compatible and Azure Blob
+adapters remain targets, as do a first-party hosted Batch service and server-side
+pointer validation.
 
 Clone should eventually support metadata/thumbnails first and full-object hydration
 on demand:
@@ -131,24 +137,37 @@ non-overlapping edit masks or layers are available.
 Core workflow:
 
 ```bash
+git init
 pixlog init
-pixlog add assets/hero.png
+git add assets/hero.png
 pixlog status
-pixlog diff
-pixlog commit -m "Replace background"
-pixlog log assets/hero.png
-pixlog push
+pixlog diff --staged
+pixlog check
+git commit -m "Replace background"
+git push
+```
+
+Pull-request CI evaluates a Git range rather than a synthetic staged index:
+
+```bash
+pixlog check --range origin/main...HEAD
 ```
 
 Differentiating workflows:
 
 - Visual blame: find the commit that changed a point or region.
-- Visual bisect: find the first revision crossing an SSIM/change threshold.
+- Visual threshold search: find the first revision crossing an SSIM/change limit.
 - Change policy: ensure an AI edit stayed inside permitted regions.
 - Bitmap policy masks: protect product pixels while permitting background edits.
 - Recipe diff/reproduce: compare and rerun generation workflows.
 - Lineage: traverse outputs, references, masks, variants, and approvals.
 - Agent API/MCP: query image history and provenance programmatically.
+
+Pointer storage, filter-process, file/HTTP transfer, worktree/staged/revision diff,
+external diff/difftool, recipes, command capture, guarded reproduction, Git
+lineage, visual blame, file locks, safe PNG merge, and range policy are implemented.
+Cloud adapters, local review UI, provider API integration, hosted validation,
+GitHub Checks, and HTTP locks remain future work.
 
 ## AI Asset Management Opportunities
 
@@ -175,8 +194,9 @@ Existing categories cover portions of the problem:
 - ComfyUI/AUTOMATIC1111: generation parameters and workflows.
 - C2PA: signed content provenance.
 
-PixLog's intended gap is one local binary combining version graph, visual regions,
-generation recipes, reproducibility, remote object sync, and developer automation.
+PixLog's intended gap is one local binary connecting Git history with visual
+regions, generation recipes, reproducibility, remote media sync, and developer
+automation.
 
 ## Research References
 

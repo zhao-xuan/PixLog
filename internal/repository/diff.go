@@ -39,6 +39,8 @@ type snapshot struct {
 	label     string
 	entries   map[string]Entry
 	manifests map[string]imaging.Manifest
+	data      map[string][]byte
+	recipes   map[string][]byte
 	working   bool
 }
 
@@ -189,6 +191,9 @@ func (r *Repository) diffSnapshots(oldSnapshot, newSnapshot snapshot, paths []st
 }
 
 func (r *Repository) snapshotData(source snapshot, path string, entry Entry) ([]byte, error) {
+	if data, exists := source.data[path]; exists {
+		return data, nil
+	}
 	if source.working {
 		data, err := os.ReadFile(filepath.Join(r.Root, filepath.FromSlash(path)))
 		if err != nil {

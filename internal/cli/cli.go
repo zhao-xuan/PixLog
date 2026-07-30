@@ -20,11 +20,46 @@ import (
 	"github.com/pixlog/pixlog/internal/repository"
 )
 
-const Version = "0.1.0-dev"
+const Version = "0.2.0-dev"
+
+type repositoryView interface {
+	Status() (repository.Status, error)
+	DiffWorking([]string, imaging.DiffOptions) (repository.DiffReport, error)
+	DiffStaged([]string, imaging.DiffOptions) (repository.DiffReport, error)
+	DiffCommits(string, string, []string, imaging.DiffOptions) (repository.DiffReport, error)
+	CheckPolicy(string, imaging.DiffOptions) (repository.PolicyCheckResult, error)
+}
+
+type assetAdder interface {
+	Add([]string, string) ([]repository.Entry, error)
+}
+
+type commandCaptureRepository interface {
+	RootPath() string
+	SnapshotAssets() (map[string]string, error)
+	CaptureEntries() (map[string]repository.Entry, error)
+	ApplyCommandCapture([]string, []string, []byte) (string, error)
+}
+
+type recipeRepository interface {
+	ImportRecipe(string, []byte) (string, error)
+	RecipeData(string, string) (string, []byte, error)
+	RecipeDiff(string, string, string) (string, string, []recipe.Change, error)
+}
+
+type inspectionRepository interface {
+	Inspect(string, string) (repository.Inspection, error)
+}
 
 func Run(args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		printHelp(stdout)
+		return 0
+	}
+	if gitCommand, delegated := gitProxyCommand(args[0]); delegated {
+		if err := runGitProxy(gitCommand, args[1:], stdout, stderr); err != nil {
+			return commandExitCode(err, stderr)
+		}
 		return 0
 	}
 	var err error
@@ -37,14 +72,32 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 0
 	case "init":
 		err = runInit(args[1:], stdout, stderr)
+	case "install":
+		err = runGitIntegration(append([]string{"install"}, args[1:]...), stdout, stderr)
+	case "git":
+		err = runGitIntegration(args[1:], stdout, stderr)
+	case "git-diff":
+		err = runGitDiff(args[1:], stdout)
+	case "git-merge-driver":
+		err = runGitMergeDriver(args[1:])
+	case "filter-process":
+		err = runFilterProcess(args[1:], stdout)
+	case "hook":
+		err = runHook(args[1:], stdout, stderr)
 	case "add":
 		err = runAdd(args[1:], stdout, stderr)
+	case "track":
+		err = runTrack(args[1:], stdout, stderr)
 	case "rm":
 		err = runRemove(args[1:], stdout, stderr)
 	case "status":
 		err = runStatus(args[1:], stdout, stderr)
 	case "diff":
 		err = runDiff(args[1:], stdout, stderr)
+	case "compare":
+		err = runCompare(args[1:], stdout, stderr)
+	case "hydrate", "dehydrate":
+		err = runHydration(args[0], args[1:], stdout, stderr)
 	case "commit":
 		err = runCommit(args[1:], stdout, stderr)
 	case "log":
@@ -59,12 +112,16 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = runClone(args[1:], stdout, stderr)
 	case "verify":
 		err = runVerify(args[1:], stdout, stderr)
+	case "doctor":
+		err = runDoctor(args[1:], stdout, stderr)
 	case "inspect":
 		err = runInspect(args[1:], stdout, stderr)
 	case "restore":
 		err = runRestore(args[1:], stdout, stderr)
 	case "lineage":
 		err = runLineage(args[1:], stdout, stderr)
+	case "reproduce":
+		err = runReproduce(args[1:], stdout, stderr)
 	case "blame":
 		err = runBlame(args[1:], stdout, stderr)
 	case "branch":
@@ -91,35 +148,258 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if err != nil {
+		var exitError *commandExitError
+		if errors.As(err, &exitError) {
+			return exitError.Code
+		}
 		fmt.Fprintf(stderr, "pixlog: %v\n", err)
 		return 1
 	}
 	return 0
 }
 
+func gitProxyCommand(command string) (string, bool) {
+	alternatives := map[string]string{
+		"rm":          "rm",
+		"commit":      "commit",
+		"log":         "log",
+		"show":        "show",
+		"restore":     "restore",
+		"checkout":    "checkout",
+		"branch":      "branch",
+		"switch":      "switch",
+		"tag":         "tag",
+		"remote":      "remote",
+		"push":        "push",
+		"fetch":       "fetch",
+		"pull":        "pull",
+		"clone":       "clone",
+		"merge":       "merge",
+		"bisect":      "bisect",
+		"rebase":      "rebase",
+		"cherry-pick": "cherry-pick",
+		"reset":       "reset",
+		"revert":      "revert",
+	}
+	alternative, exists := alternatives[command]
+	return alternative, exists
+}
+
+type commandExitError struct {
+	Code int
+}
+
+func (err *commandExitError) Error() string {
+	return fmt.Sprintf("command exited with status %d", err.Code)
+}
+
+func commandExitCode(err error, stderr io.Writer) int {
+	var exitError *commandExitError
+	if errors.As(err, &exitError) {
+		return exitError.Code
+	}
+	fmt.Fprintf(stderr, "pixlog: %v\n", err)
+	return 1
+}
+
+func runGitPassthrough(command string, args []string, stdout, stderr io.Writer) error {
+	child := exec.Command("git", append([]string{command}, args...)...)
+	child.Stdin = os.Stdin
+	child.Stdout = stdout
+	child.Stderr = stderr
+	if err := child.Run(); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			return &commandExitError{Code: exitError.ExitCode()}
+		}
+		return fmt.Errorf("run git %s: %w", command, err)
+	}
+	return nil
+}
+
+func runGitProxy(command string, args []string, stdout, stderr io.Writer) error {
+	if command == "clone" {
+		return runGitCloneProxy(args, stdout, stderr)
+	}
+	if command == "push" {
+		executable, err := currentExecutable()
+		if err != nil {
+			return err
+		}
+		if _, err := repository.InstallPrePushHook("", executable); err != nil {
+			return err
+		}
+	}
+	return runGitPassthrough(command, args, stdout, stderr)
+}
+
+func runGitCloneProxy(args []string, stdout, stderr io.Writer) error {
+	executable, err := currentExecutable()
+	if err != nil {
+		return err
+	}
+	filterCommand := shellCommandQuote(executable) + " filter-process"
+	childArgs := []string{"-c", "filter.pixlog.process=" + filterCommand, "-c", "filter.pixlog.required=true", "clone"}
+	childArgs = append(childArgs, args...)
+	child := exec.Command("git", childArgs...)
+	child.Stdin = os.Stdin
+	child.Stdout = stdout
+	child.Stderr = stderr
+	if err := child.Run(); err != nil {
+		var exitError *exec.ExitError
+		if errors.As(err, &exitError) {
+			return &commandExitError{Code: exitError.ExitCode()}
+		}
+		return fmt.Errorf("run git clone: %w", err)
+	}
+	target, err := gitCloneTarget(args)
+	if err != nil {
+		return err
+	}
+	if _, err := repository.InstallGitIntegration(target, executable); err != nil {
+		return fmt.Errorf("install PixLog in cloned repository: %w", err)
+	}
+	return nil
+}
+
+func gitCloneTarget(args []string) (string, error) {
+	optionsWithValues := map[string]bool{
+		"--template": true, "--reference": true, "--reference-if-able": true,
+		"--origin": true, "-o": true, "--branch": true, "-b": true,
+		"--upload-pack": true, "-u": true, "--depth": true, "--shallow-since": true,
+		"--shallow-exclude": true, "--separate-git-dir": true, "--jobs": true,
+		"-j": true, "--filter": true, "--server-option": true, "--config": true, "-c": true,
+	}
+	positionals := []string{}
+	for index := 0; index < len(args); index++ {
+		argument := args[index]
+		if argument == "--" {
+			positionals = append(positionals, args[index+1:]...)
+			break
+		}
+		name := argument
+		if before, _, found := strings.Cut(argument, "="); found {
+			name = before
+		}
+		if optionsWithValues[name] {
+			if name == argument {
+				index++
+			}
+			continue
+		}
+		if strings.HasPrefix(argument, "-") {
+			continue
+		}
+		positionals = append(positionals, argument)
+	}
+	if len(positionals) == 0 || len(positionals) > 2 {
+		return "", errors.New("could not determine cloned repository path")
+	}
+	if len(positionals) == 2 {
+		return positionals[1], nil
+	}
+	remote := strings.TrimRight(positionals[0], "/")
+	if colon := strings.LastIndex(remote, ":"); colon >= 0 && !strings.Contains(remote[colon+1:], "/") {
+		remote = remote[colon+1:]
+	} else {
+		remote = filepath.Base(remote)
+	}
+	target := strings.TrimSuffix(remote, ".git")
+	if target == "" || target == "." {
+		return "", fmt.Errorf("could not infer clone directory from %q", positionals[0])
+	}
+	return target, nil
+}
+
+func shellCommandQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
+}
+
 func runInit(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("init", stderr)
-	bare := flags.Bool("bare", false, "create a bare repository")
+	bare := flags.Bool("bare", false, "unsupported: PixLog requires a Git worktree")
+	_ = flags.Bool("git", false, "deprecated alias; Git is always the version-control backend")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() > 1 {
-		return errors.New("usage: pixlog init [--bare] [path]")
+		return errors.New("usage: pixlog init [--git] [path]")
 	}
 	path := "."
 	if flags.NArg() == 1 {
 		path = flags.Arg(0)
 	}
-	repo, err := repository.Init(path, *bare)
+	if *bare {
+		return errors.New("PixLog requires a non-bare Git worktree; use git init --bare only for a Git remote")
+	}
+	if _, err := repository.OpenGit(path); err != nil {
+		if !errors.Is(err, repository.ErrNotGitRepository) {
+			return err
+		}
+		if err := runGitPassthrough("init", []string{"--", path}, stdout, stderr); err != nil {
+			return err
+		}
+	}
+	result, err := installGitIntegration(path)
 	if err != nil {
 		return err
 	}
-	kind := "repository"
-	if *bare {
-		kind = "bare repository"
-	}
-	fmt.Fprintf(stdout, "Initialized empty PixLog %s in %s\n", kind, repo.Control)
+	fmt.Fprintf(stdout, "Initialized PixLog in Git repository %s\n", result.Root)
+	fmt.Fprintf(stdout, "Updated %s\n", result.AttributesPath)
+	fmt.Fprintf(stdout, "Config %s\n", result.ConfigPath)
 	return nil
+}
+
+func runGitIntegration(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 {
+		return errors.New("usage: pixlog git <git-command> [args...] | pixlog git install [path]")
+	}
+	switch args[0] {
+	case "install":
+		flags := newFlagSet("git install", stderr)
+		asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() > 1 {
+			return errors.New("usage: pixlog git install [--json] [path]")
+		}
+		path := "."
+		if flags.NArg() == 1 {
+			path = flags.Arg(0)
+		}
+		result, err := installGitIntegration(path)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			return writeJSON(stdout, result)
+		}
+		fmt.Fprintf(stdout, "Git repository: %s\n", result.Root)
+		fmt.Fprintf(stdout, "Attributes:     %s\n", result.AttributesPath)
+		fmt.Fprintf(stdout, "Config:         %s\n", result.ConfigPath)
+		fmt.Fprintf(stdout, "Diff driver:    %s\n", result.DriverCommand)
+		fmt.Fprintf(stdout, "Media filter:   %s\n", result.FilterCommand)
+		fmt.Fprintf(stdout, "Merge driver:   %s\n", result.MergeCommand)
+		return nil
+	default:
+		return runGitPassthrough(args[0], args[1:], stdout, stderr)
+	}
+}
+
+func installGitIntegration(path string) (repository.GitInstallResult, error) {
+	executable, err := currentExecutable()
+	if err != nil {
+		return repository.GitInstallResult{}, fmt.Errorf("resolve PixLog executable: %w", err)
+	}
+	return repository.InstallGitIntegration(path, executable)
+}
+
+func currentExecutable() (string, error) {
+	if override := strings.TrimSpace(os.Getenv("PIXLOG_EXECUTABLE")); override != "" {
+		return filepath.Abs(override)
+	}
+	return os.Executable()
 }
 
 func runAdd(args []string, stdout, stderr io.Writer) error {
@@ -128,7 +408,7 @@ func runAdd(args []string, stdout, stderr io.Writer) error {
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
-	repo, err := repository.Open("")
+	repo, err := openAssetAdder()
 	if err != nil {
 		return err
 	}
@@ -138,6 +418,29 @@ func runAdd(args []string, stdout, stderr io.Writer) error {
 	}
 	for _, entry := range entries {
 		fmt.Fprintf(stdout, "add %s  %s\n", repository.ShortOID(entry.ContentOID), entry.Path)
+	}
+	return nil
+}
+
+func runTrack(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("track", stderr)
+	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	patterns, err := repo.TrackPatterns(flags.Args())
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, map[string]any{"patterns": patterns})
+	}
+	for _, pattern := range patterns {
+		fmt.Fprintf(stdout, "track %s\n", pattern)
 	}
 	return nil
 }
@@ -162,6 +465,11 @@ func runRemove(args []string, stdout, stderr io.Writer) error {
 }
 
 func runStatus(args []string, stdout, stderr io.Writer) error {
+	for _, argument := range args {
+		if argument == "--porcelain" || strings.HasPrefix(argument, "--porcelain=") {
+			return runGitPassthrough("status", args, stdout, stderr)
+		}
+	}
 	flags := newFlagSet("status", stderr)
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
 	if err := flags.Parse(args); err != nil {
@@ -170,7 +478,7 @@ func runStatus(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("usage: pixlog status [--json]")
 	}
-	repo, err := repository.Open("")
+	repo, err := openRepositoryView()
 	if err != nil {
 		return err
 	}
@@ -242,7 +550,7 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 		return errors.New("diff requires zero or two revisions")
 	}
 
-	repo, err := repository.Open("")
+	repo, err := openRepositoryView()
 	if err != nil {
 		return err
 	}
@@ -299,6 +607,182 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 		printDiff(stdout, report)
 		return nil
 	}
+}
+
+func runCompare(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("compare", stderr)
+	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	threshold := flags.Int("threshold", 8, "per-channel change threshold from 0 to 255")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 2 {
+		return errors.New("usage: pixlog compare [--json] [--threshold <0-255>] <old-image> <new-image>")
+	}
+	if *threshold < 0 || *threshold > 255 {
+		return errors.New("threshold must be between 0 and 255")
+	}
+	visual, err := compareImageFiles(flags.Arg(0), flags.Arg(1), imaging.DiffOptions{Threshold: uint8(*threshold)})
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, visual)
+	}
+	printDiff(stdout, repository.DiffReport{
+		From: flags.Arg(0),
+		To:   flags.Arg(1),
+		Assets: []repository.AssetDiff{{
+			Path:   flags.Arg(1),
+			Kind:   repository.ChangeModified,
+			Visual: &visual,
+		}},
+	})
+	return nil
+}
+
+func runHydration(action string, args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet(action, stderr)
+	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	var result repository.HydrateResult
+	if action == "hydrate" {
+		result, err = repo.Hydrate(flags.Args())
+	} else {
+		result, err = repo.Dehydrate(flags.Args())
+	}
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, result)
+	}
+	paths := result.Hydrated
+	if action == "dehydrate" {
+		paths = result.Dehydrated
+	}
+	for _, path := range paths {
+		fmt.Fprintf(stdout, "%s %s\n", action, path)
+	}
+	return nil
+}
+
+func runGitDiff(args []string, stdout io.Writer) error {
+	if len(args) != 7 {
+		return errors.New("git-diff must be invoked by Git's external diff protocol")
+	}
+	asset := repository.AssetDiff{Path: filepath.ToSlash(args[0]), Kind: repository.ChangeModified}
+	switch {
+	case args[3] == "000000" || args[1] == "/dev/null":
+		asset.Kind = repository.ChangeAdded
+	case args[6] == "000000" || args[4] == "/dev/null":
+		asset.Kind = repository.ChangeDeleted
+	default:
+		visual, err := compareImageFiles(args[1], args[4], imaging.DiffOptions{Threshold: 8})
+		if err != nil {
+			if errors.Is(err, imaging.ErrUnsupportedVisualFormat) {
+				asset.Note = "visual diff unavailable for this format"
+			} else {
+				return err
+			}
+		} else {
+			asset.Visual = &visual
+		}
+	}
+	from, to := repository.ShortOID(args[2]), repository.ShortOID(args[5])
+	if isNullGitOID(args[2]) {
+		from = "(none)"
+	}
+	if isNullGitOID(args[5]) {
+		to = "worktree"
+	}
+	if asset.Kind == repository.ChangeDeleted {
+		to = "(none)"
+	}
+	printDiff(stdout, repository.DiffReport{
+		From:   from,
+		To:     to,
+		Assets: []repository.AssetDiff{asset},
+	})
+	return nil
+}
+
+func runGitMergeDriver(args []string) error {
+	if len(args) != 5 {
+		return errors.New("git-merge-driver must be invoked by Git")
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	return repo.MergeDriver(args[0], args[1], args[2], args[4])
+}
+
+func runFilterProcess(args []string, stdout io.Writer) error {
+	if len(args) != 0 {
+		return errors.New("usage: pixlog filter-process")
+	}
+	return repository.ServeGitFilterProcess("", os.Stdin, stdout)
+}
+
+func runHook(args []string, stdout, stderr io.Writer) error {
+	if len(args) == 0 || args[0] != "dispatch-pre-push" {
+		return errors.New("usage: pixlog hook dispatch-pre-push <remote-name> [remote-location]")
+	}
+	input, err := io.ReadAll(os.Stdin)
+	if err != nil {
+		return err
+	}
+	result, err := repository.RunPrePushDispatcher("", args[1:], input, stdout, stderr)
+	if err != nil {
+		return err
+	}
+	if len(result.Objects) > 0 {
+		fmt.Fprintf(stderr, "PixLog uploaded %d object(s), %d byte(s) to %s\n", len(result.Objects), result.Bytes, result.Endpoint)
+	}
+	return nil
+}
+
+func compareImageFiles(oldPath, newPath string, options imaging.DiffOptions) (imaging.VisualDiff, error) {
+	oldData, err := os.ReadFile(oldPath)
+	if err != nil {
+		return imaging.VisualDiff{}, fmt.Errorf("open old image %s: %w", oldPath, err)
+	}
+	newData, err := os.ReadFile(newPath)
+	if err != nil {
+		return imaging.VisualDiff{}, fmt.Errorf("open new image %s: %w", newPath, err)
+	}
+	if _, found, _ := repository.ParsePixLogPointer(oldData); found {
+		repo, err := repository.OpenGit("")
+		if err != nil {
+			return imaging.VisualDiff{}, err
+		}
+		oldData, _, err = repo.SmudgeFilter(oldData)
+		if err != nil {
+			return imaging.VisualDiff{}, err
+		}
+	}
+	if _, found, _ := repository.ParsePixLogPointer(newData); found {
+		repo, err := repository.OpenGit("")
+		if err != nil {
+			return imaging.VisualDiff{}, err
+		}
+		newData, _, err = repo.SmudgeFilter(newData)
+		if err != nil {
+			return imaging.VisualDiff{}, err
+		}
+	}
+	return imaging.CompareReaders(bytes.NewReader(oldData), bytes.NewReader(newData), options)
+}
+
+func isNullGitOID(oid string) bool {
+	return oid != "" && strings.Trim(oid, "0") == ""
 }
 
 func runCommit(args []string, stdout, stderr io.Writer) error {
@@ -375,7 +859,7 @@ func runRecipe(args []string, stdout, stderr io.Writer) error {
 		if flags.NArg() != 2 {
 			return errors.New("usage: pixlog recipe import <asset> <recipe.json>")
 		}
-		repo, err := repository.Open("")
+		repo, err := openRecipeRepository()
 		if err != nil {
 			return err
 		}
@@ -398,7 +882,7 @@ func runRecipe(args []string, stdout, stderr io.Writer) error {
 		if flags.NArg() != 1 {
 			return errors.New("usage: pixlog recipe show [--revision <rev>] <asset>")
 		}
-		repo, err := repository.Open("")
+		repo, err := openRecipeRepository()
 		if err != nil {
 			return err
 		}
@@ -422,7 +906,7 @@ func runRecipe(args []string, stdout, stderr io.Writer) error {
 		if flags.NArg() != 2 || len(paths) != 1 {
 			return errors.New("usage: pixlog recipe diff [--json] <old-rev> <new-rev> -- <asset>")
 		}
-		repo, err := repository.Open("")
+		repo, err := openRecipeRepository()
 		if err != nil {
 			return err
 		}
@@ -570,7 +1054,7 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("usage: pixlog verify [--json]")
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -592,6 +1076,42 @@ func runVerify(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
+func runDoctor(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("doctor", stderr)
+	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return errors.New("usage: pixlog doctor [--json]")
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	result, err := repo.Doctor()
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		if err := writeJSON(stdout, result); err != nil {
+			return err
+		}
+	} else {
+		for _, check := range result.Checks {
+			status := "PASS"
+			if !check.Passed {
+				status = "FAIL"
+			}
+			fmt.Fprintf(stdout, "%-4s %-12s %s\n", status, check.Name, check.Detail)
+		}
+	}
+	if !result.Passed {
+		return errors.New("PixLog doctor found configuration or object errors")
+	}
+	return nil
+}
+
 func runInspect(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("inspect", stderr)
 	revision := flags.String("revision", "", "inspect a commit instead of the index")
@@ -602,7 +1122,7 @@ func runInspect(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 1 {
 		return errors.New("usage: pixlog inspect [--revision <rev>] [--json] <asset>")
 	}
-	repo, err := repository.Open("")
+	repo, err := openInspectionRepository()
 	if err != nil {
 		return err
 	}
@@ -664,7 +1184,7 @@ func runLineage(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 1 {
 		return errors.New("usage: pixlog lineage [--json] <asset>")
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -690,6 +1210,59 @@ func runLineage(args []string, stdout, stderr io.Writer) error {
 	return nil
 }
 
+func runReproduce(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("reproduce", stderr)
+	revision := flags.String("revision", "HEAD", "recipe revision")
+	execute := flags.Bool("execute", false, "execute a validated captured command")
+	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 1 {
+		return errors.New("usage: pixlog reproduce [--revision <rev>] [--execute] [--json] <asset>")
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	plan, err := repo.PlanReproduction(*revision, flags.Arg(0))
+	if err != nil {
+		return err
+	}
+	if !*execute {
+		if *asJSON {
+			return writeJSON(stdout, plan)
+		}
+		fmt.Fprintf(stdout, "Recipe:    %s\n", plan.RecipeOID)
+		fmt.Fprintf(stdout, "Asset:     %s @ %s\n", plan.Asset, plan.Revision)
+		fmt.Fprintf(stdout, "Kind:      %s\n", plan.Kind)
+		if plan.Command == nil {
+			fmt.Fprintln(stdout, "Command:   (adapter required)")
+			return nil
+		}
+		fmt.Fprintf(stdout, "Command:   %s %s\n", plan.Command.Executable, strings.Join(plan.Command.Arguments, " "))
+		fmt.Fprintf(stdout, "Directory: %s\n", plan.Command.WorkingDirectory)
+		return nil
+	}
+	if *asJSON {
+		return errors.New("--json cannot be combined with --execute")
+	}
+	if err := repo.ValidateReproduction(plan); err != nil {
+		return err
+	}
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	workingDirectory := filepath.Join(repo.Root, filepath.FromSlash(plan.Command.WorkingDirectory))
+	if err := os.Chdir(workingDirectory); err != nil {
+		return fmt.Errorf("enter reproduction working directory: %w", err)
+	}
+	defer os.Chdir(previousDirectory)
+	command := append([]string{"--kind", "reproduction", "--", plan.Command.Executable}, plan.Command.Arguments...)
+	return runCapturedCommand(command, stdout, stderr)
+}
+
 func runBlame(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("blame", stderr)
 	point := flags.String("point", "", "image coordinate in x,y form")
@@ -708,7 +1281,7 @@ func runBlame(args []string, stdout, stderr io.Writer) error {
 	if _, err := fmt.Sscanf(*point, "%d,%d", &x, &y); err != nil {
 		return fmt.Errorf("invalid point %q; expected x,y", *point)
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -851,7 +1424,7 @@ func runLock(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 1 {
 		return errors.New("usage: pixlog lock [--owner <name>] [--remote <name>] [--json] <asset>")
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -882,7 +1455,7 @@ func runUnlock(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 1 {
 		return errors.New("usage: pixlog unlock [--owner <name>] [--remote <name>] [--force] [--json] <asset>")
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -907,7 +1480,7 @@ func runLocks(args []string, stdout, stderr io.Writer) error {
 	if flags.NArg() != 0 {
 		return errors.New("usage: pixlog locks [--remote <name>] [--json]")
 	}
-	repo, err := repository.Open("")
+	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
 	}
@@ -927,22 +1500,34 @@ func runLocks(args []string, stdout, stderr io.Writer) error {
 func runCheck(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("check", stderr)
 	policyPath := flags.String("policy", ".pixlog-policy.json", "path to the JSON policy file")
+	revisionRange := flags.String("range", "", "check a Git revision range: <base>..<head> or <base>...<head>")
 	threshold := flags.Int("threshold", 8, "per-channel visual change threshold from 0 to 255")
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 0 {
-		return errors.New("usage: pixlog check [--policy <path>] [--threshold <0-255>] [--json]")
+		return errors.New("usage: pixlog check [--policy <path>] [--range <base>..<head>] [--threshold <0-255>] [--json]")
 	}
 	if *threshold < 0 || *threshold > 255 {
 		return errors.New("threshold must be between 0 and 255")
 	}
-	repo, err := repository.Open("")
-	if err != nil {
-		return err
+	options := imaging.DiffOptions{Threshold: uint8(*threshold)}
+	var result repository.PolicyCheckResult
+	var err error
+	if *revisionRange != "" {
+		gitRepo, openErr := repository.OpenGit("")
+		if openErr != nil {
+			return openErr
+		}
+		result, err = gitRepo.CheckPolicyRange(*policyPath, *revisionRange, options)
+	} else {
+		repo, openErr := openRepositoryView()
+		if openErr != nil {
+			return openErr
+		}
+		result, err = repo.CheckPolicy(*policyPath, options)
 	}
-	result, err := repo.CheckPolicy(*policyPath, imaging.DiffOptions{Threshold: uint8(*threshold)})
 	if err != nil {
 		return err
 	}
@@ -989,7 +1574,11 @@ func runCapturedCommand(args []string, stdout, stderr io.Writer) error {
 		return errors.New("recipe kind cannot be empty")
 	}
 
-	repo, err := repository.Open("")
+	repo, err := openCommandCaptureRepository()
+	if err != nil {
+		return err
+	}
+	sourceControl, err := repository.DiscoverGitContext(repo.RootPath())
 	if err != nil {
 		return err
 	}
@@ -997,7 +1586,7 @@ func runCapturedCommand(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	indexBefore, err := repo.ReadIndex()
+	entriesBefore, err := repo.CaptureEntries()
 	if err != nil {
 		return err
 	}
@@ -1022,7 +1611,7 @@ func runCapturedCommand(args []string, stdout, stderr io.Writer) error {
 	delta := repository.CompareAssetSnapshots(before, after)
 	trackedDeleted := make([]string, 0, len(delta.Deleted))
 	for _, path := range delta.Deleted {
-		if _, tracked := indexBefore.Entries[path]; tracked {
+		if _, tracked := entriesBefore[path]; tracked {
 			trackedDeleted = append(trackedDeleted, path)
 		}
 	}
@@ -1050,14 +1639,14 @@ func runCapturedCommand(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	relativeWorkingDirectory, err := filepath.Rel(repo.Root, workingDirectory)
+	relativeWorkingDirectory, err := filepath.Rel(repo.RootPath(), workingDirectory)
 	if err != nil {
 		return err
 	}
 
 	parents := []map[string]any{}
 	for _, path := range append(append([]string{}, delta.Modified...), trackedDeleted...) {
-		if entry, exists := indexBefore.Entries[path]; exists {
+		if entry, exists := entriesBefore[path]; exists {
 			parent := map[string]any{"asset": entry.ContentOID, "path": path, "role": "previous-version"}
 			if entry.RecipeOID != "" {
 				parent["recipe"] = entry.RecipeOID
@@ -1094,31 +1683,16 @@ func runCapturedCommand(args []string, stdout, stderr io.Writer) error {
 		"outputs":         outputs,
 		"deleted_outputs": trackedDeleted,
 	}
+	if sourceControl != nil {
+		recipeDocument["source_control"] = sourceControl
+	}
 	recipeData, err := json.Marshal(recipeDocument)
 	if err != nil {
 		return fmt.Errorf("encode command recipe: %w", err)
 	}
-	if len(delta.Modified) > 0 {
-		result.RecipeOID, err = repo.StoreRecipe(recipeData)
-		if err != nil {
-			return err
-		}
-		absolutePaths := make([]string, 0, len(delta.Modified))
-		for _, path := range delta.Modified {
-			absolutePaths = append(absolutePaths, filepath.Join(repo.Root, filepath.FromSlash(path)))
-		}
-		if _, err := repo.Add(absolutePaths, result.RecipeOID); err != nil {
-			return err
-		}
-	}
-	if len(trackedDeleted) > 0 {
-		absolutePaths := make([]string, 0, len(trackedDeleted))
-		for _, path := range trackedDeleted {
-			absolutePaths = append(absolutePaths, filepath.Join(repo.Root, filepath.FromSlash(path)))
-		}
-		if _, err := repo.Remove(absolutePaths); err != nil {
-			return err
-		}
+	result.RecipeOID, err = repo.ApplyCommandCapture(delta.Modified, trackedDeleted, recipeData)
+	if err != nil {
+		return err
 	}
 
 	if *asJSON {
@@ -1246,40 +1820,74 @@ func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	return flags
 }
 
+func openRepositoryView() (repositoryView, error) {
+	gitRepo, err := repository.OpenGit("")
+	if err == nil {
+		return gitRepo, nil
+	}
+	if errors.Is(err, repository.ErrNotGitRepository) {
+		return nil, errors.New("not a Git repository (or any parent directory)")
+	}
+	return nil, err
+}
+
+func openAssetAdder() (assetAdder, error) {
+	return repository.OpenGit("")
+}
+
+func openCommandCaptureRepository() (commandCaptureRepository, error) {
+	return repository.OpenGit("")
+}
+
+func openRecipeRepository() (recipeRepository, error) {
+	return repository.OpenGit("")
+}
+
+func openInspectionRepository() (inspectionRepository, error) {
+	return repository.OpenGit("")
+}
+
 func printHelp(writer io.Writer) {
-	help := `PixLog - Git-like version control for images and generation provenance
+	help := `PixLog - Git media, visual history, and generation provenance
 
 Usage:
   pixlog <command> [options]
+	git pixlog <command> [options]
 
-Repository commands:
-  init       Create a PixLog repository
-  add        Stage image assets
-  rm         Stage tracked asset removal
-  status     Show index and working tree state
-	diff       Inspect byte, metadata, and visual changes
-  commit     Record the staged image tree
-  log        Show commit history
-	recipe     Import, inspect, and compare generation recipes
-	remote     Configure a local or file:// remote
-	push       Upload missing objects, then update the remote ref
-	fetch      Download and verify remote objects
-	pull       Fast-forward and restore the remote image tree
-	clone      Clone a PixLog repository
-	verify     Verify every content-addressed object
+Setup:
+	init       Initialize Git if needed and install PixLog
+	install    Refresh attributes, drivers, config, and pre-push hook
+	track      Add PixLog patterns to .gitattributes
+	git        Run any Git command without PixLog-specific routing
+
+Image and provenance:
+	add        Inspect and stage image assets through Git
+	status     Show Git-backed image state; porcelain options proxy Git
+	diff       Inspect byte, metadata, recipe, and visual changes
+	compare    Compare two image files directly
 	inspect    Show an asset manifest and provenance IDs
-	restore    Restore image bytes from the index or a commit
-	lineage    Show an asset's version and recipe lineage
-	blame      Find the commit that last changed an image point
-	branch     List, create, or delete branches
-	switch     Switch branches and restore their image tree
-	tag        List or create immutable release refs
-	lock       Lock a tracked binary asset locally or on a remote
+	recipe     Import, inspect, and compare generation recipes
+	run        Capture a command and stage its changed image outputs
+	reproduce  Plan or execute a source-state-validated captured command
+	lineage    Show rename-aware Git image history
+	blame      Find the Git commit that last changed an image point
+
+Media and collaboration:
+	hydrate    Restore tracked pointer assets to exact image bytes
+	dehydrate  Replace worktree image bytes with their tracked pointers
+	verify     Verify local content-addressed objects and pointer references
+	doctor     Check repository integration and object integrity
+	lock       Lock a tracked binary asset locally or on a file endpoint
 	unlock     Release a binary asset lock
 	locks      List active binary asset locks
-	check      Enforce staged image policy rules for CI
-	run        Capture a command and stage its changed image outputs
-	bisect     Find the first image revision crossing a visual threshold
+	check      Enforce staged or Git-range image policy rules
+
+Git proxies:
+	rm commit log show restore checkout branch switch tag remote
+	push fetch pull clone merge bisect rebase cherry-pick reset revert
+
+These commands preserve Git arguments and exit codes. pixlog push ensures the
+PixLog pre-push hook is installed before running Git.
 
 Other commands:
   version    Print the PixLog version

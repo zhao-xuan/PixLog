@@ -1,162 +1,200 @@
 # PixLog
 
-PixLog is a local, Git-like binary for image assets and AI generation provenance.
-It tracks three histories independently:
+**English** | [简体中文](README.zh-CN.md)
 
-1. **File history**: exact bytes, format, size, and metadata.
-2. **Visual history**: where pixels changed and how large the change is.
-3. **Process history**: prompt, model, seed, workflow, references, and tool metadata.
+PixLog is a Git-compatible media and provenance layer for image assets. Git owns
+the index, commits, branches, merges, and remotes. PixLog adds:
 
-PixLog is currently an alpha standalone VCS written in Go. It is not a Web app,
-does not require a browser or service, and does not currently wrap a Git repository.
+1. **Exact file history** through SHA-256 content-addressed media objects.
+2. **Visual history** through pixel metrics, regions, heatmaps, and visual blame.
+3. **Generation history** through recipes, a local provenance journal, and guarded
+   reproduction.
+
+Git commits small PixLog pointers; worktrees contain the original image bytes.
+There is no second PixLog commit graph or staging area.
 
 ## Build
 
-Go 1.24 or newer is required.
+PixLog requires Go 1.24 and Git.
 
 ```bash
 make build
 ./bin/pixlog version
 ```
 
-Install directly into `GOBIN`:
+Install both command entry points into `GOBIN`:
 
 ```bash
-go install ./cmd/pixlog
+go install ./cmd/pixlog ./cmd/git-pixlog
 ```
+
+With `git-pixlog` on `PATH`, `git pixlog diff` is equivalent to
+`pixlog diff`.
 
 ## Quick Start
 
 ```bash
-mkdir artwork && cd artwork
+git init artwork
+cd artwork
 pixlog init
 
-pixlog add assets/hero.png
-pixlog status
-pixlog commit -m "Add hero artwork"
+# Commit the shared tracking policy. Drivers and media stay under .git/.
+git add .gitattributes .pixlog.toml
+git commit -m "Configure PixLog"
 
-# Edit the image, then inspect the unstaged visual change.
-pixlog diff assets/hero.png
-pixlog diff --json assets/hero.png
-pixlog diff --heatmap hero-heatmap.png assets/hero.png
-
-pixlog add assets/hero.png
-pixlog commit -m "Replace background"
-pixlog log assets/hero.png
-pixlog lineage assets/hero.png
-pixlog blame --point 823,441 assets/hero.png
-pixlog bisect --asset assets/hero.png --against baseline.png \
-	--metric ssim --threshold 0.98
+# Direct Git commands invoke the PixLog clean filter.
+git add assets/hero.png
+pixlog diff --staged
+git commit -m "Add hero artwork"
+git push
 ```
 
-The control data lives in `.pixlog/`. Original bytes are stored by SHA-256, so
-checkout and restore are byte-exact.
+The Git index and commit contain a canonical text pointer. The clean filter stores
+the original blob and its manifest under `.git/pixlog/objects`; checkout invokes
+the smudge filter and restores the image bit-exactly.
 
-## Generation Recipes
+`pixlog add`, `commit`, `push`, `pull`, `branch`, `rebase`, and other Git-owned
+commands enter the same Git operations. Use `pixlog git <any-command>` as an
+explicit Git escape hatch.
 
-Attach a repository-side recipe to a staged image:
+## Tracking
+
+Installation tracks common PNG, JPEG, GIF, WebP, AVIF, HEIC, TIFF, and PSD
+patterns. Add project-specific patterns without losing them on reinstall:
 
 ```bash
-pixlog add output.png
-pixlog recipe import output.png recipe.json
-pixlog recipe show output.png
-pixlog commit -m "Generate product variant"
+pixlog track 'art/**/*.kra' 'renders/*.bmp'
+pixlog install
 ```
 
-PixLog automatically captures ComfyUI `workflow`/`prompt` and
-AUTOMATIC1111 `parameters` from PNG text chunks when present. Repository recipe
-objects are authoritative because embedded metadata can be removed by export,
-compression, or upload pipelines. See [docs/RECIPE.md](docs/RECIPE.md) and
-[examples/recipe.json](examples/recipe.json).
+Commit the updated `.gitattributes`.
 
-Wrap an image-producing command to capture the process and stage its outputs:
+## Visual Diff
+
+```bash
+# Index to worktree, HEAD to index, or two Git revisions:
+pixlog diff
+pixlog diff --staged
+pixlog diff HEAD~1 HEAD -- assets/hero.png
+
+# Direct comparison and heatmap:
+pixlog compare old.png new.png
+pixlog diff --heatmap hero-heatmap.png -- assets/hero.png
+
+# Installed Git integrations:
+git diff -- assets/hero.png
+git difftool --tool=pixlog HEAD~1 HEAD -- assets/hero.png
+```
+
+Supported raster decoding currently covers PNG, JPEG, and GIF. Other recognized
+formats still receive exact-byte identity, manifests, pointers, recipes, transfer,
+and locking, but may report that visual comparison is unavailable.
+
+The merge driver automatically combines same-size PNG changes only when their
+changed pixels do not conflict. All unsafe cases remain normal Git conflicts.
+
+## Generation Provenance
 
 ```bash
 pixlog run -- magick input.png -resize 50% output.png
-pixlog run --redact-args -- private-editor --token-sensitive-argument
+pixlog recipe show output.png
+git commit -m "Generate resized artwork"
+
+# Attach a normalized recipe explicitly:
+pixlog recipe import output.png examples/recipe.json
+
+# Plan or execute a captured command from a verified source state:
+pixlog reproduce --revision HEAD output.png
+pixlog reproduce --revision HEAD --execute output.png
 ```
 
-Only successful commands are staged. PixLog detects added, modified, and tracked
-deleted images. It records command arguments by default but never captures the
-child environment; use `--redact-args` when arguments contain secrets.
+`pixlog run` stages outputs only after a successful command and records the source
+HEAD/index state. Use `--redact-args` when command arguments contain secrets.
+ComfyUI and AUTOMATIC1111 metadata embedded in PNG files is imported when present.
 
-## Local Remotes
+Recipe associations are recorded in `.git/pixlog/journal.sqlite`, so a later
+ordinary `git add` preserves provenance in the pointer.
 
-The alpha supports local paths and `file://` remotes:
+## Media Remote And Hydration
+
+The pre-push hook scans commits being pushed and uploads referenced blobs,
+manifests, and recipes before Git updates refs. Existing user pre-push hooks are
+preserved.
+
+Local Git remotes automatically use a sibling `.pixlog` media directory. Configure
+an explicit file or HTTP Batch endpoint when needed:
 
 ```bash
-pixlog init --bare /srv/pixlog/design-assets
-pixlog remote add origin /srv/pixlog/design-assets
-pixlog push
-
-pixlog clone /srv/pixlog/design-assets teammate-copy
-pixlog pull
+git config pixlog.remote.origin.endpoint /srv/pixlog/project-media
+# or
+git config pixlog.remote.origin.endpoint https://media.example.test/project
 ```
 
-Objects are copied and hash-verified before a remote branch ref is updated.
-Push and pull reject divergent histories; merge is not implemented yet.
+```bash
+pixlog dehydrate assets/hero.png
+pixlog hydrate assets/hero.png
+pixlog clone /srv/git/artwork.git teammate-copy
+```
 
-## Binary Locks
+File endpoints and the HTTP Batch basic transfer client are implemented. Direct
+S3/Azure adapters and selective or delayed checkout remain planned.
+
+## History, Integrity, And Collaboration
 
 ```bash
+pixlog lineage assets/hero.png
+pixlog blame --point 823,441 assets/hero.png
+
+pixlog verify
+pixlog doctor
+
 pixlog lock --remote origin assets/hero.psd
 pixlog locks --remote origin
 pixlog unlock --remote origin assets/hero.psd
 ```
 
-Locks use atomic file creation on the selected repository. A shared filesystem
-remote therefore provides cross-process lock contention without a server.
+Lineage and visual blame follow Git history across renames. Locks work locally and
+through shared file endpoints; HTTP locks require a future service.
 
-## Change Policy
+## Policy And CI
 
-Commit [examples/policy.json](examples/policy.json) as `.pixlog-policy.json`,
-then check staged changes in CI:
+Commit [examples/policy.json](examples/policy.json) as `.pixlog-policy.json`, then
+check staged changes or a pull-request range:
 
 ```bash
 pixlog check
 pixlog check --json
+pixlog check --range origin/main...HEAD
 ```
 
-Rules can constrain format, file size, recipe presence, visual change ratio,
-SSIM, rectangular allowed-change regions, and a repository-relative bitmap mask.
-In `allowed_change_mask`, opaque light pixels allow edits while transparent or dark
-pixels protect content. A violation exits with status 1.
+Rules can constrain format, size, recipe presence, visual change, SSIM, rectangular
+regions, and bitmap masks. A violation exits with status 1.
 
-## Commands
+## Command Surface
 
 | Area | Commands |
 | --- | --- |
-| Repository | `init`, `add`, `rm`, `status`, `commit`, `log`, `restore` |
-| Visual history | `diff`, `inspect`, `lineage`, `blame`, `bisect` |
-| Provenance | `recipe import`, `recipe show`, `recipe diff`, `run` |
-| Refs | `branch`, `switch`, `tag` |
-| Sync | `remote`, `push`, `fetch`, `pull`, `clone`, `verify` |
+| Setup | `init`, `install`, `track`, `git install` |
+| Image state | `add`, `status`, `diff`, `compare`, `inspect` |
+| Provenance | `recipe import/show/diff`, `run`, `reproduce`, `lineage`, `blame` |
+| Media | `hydrate`, `dehydrate`, `verify`, `doctor` |
 | Collaboration | `lock`, `unlock`, `locks`, `check` |
+| Git proxy | `commit`, `log`, `show`, `push`, `pull`, `merge`, `rebase`, and other Git-owned commands |
+| Escape hatch | `pixlog git <any git command>` |
 
-Most inspection commands support `--json`; `diff` also supports NDJSON.
-
-## Format Capabilities
-
-| Capability | Current support |
-| --- | --- |
-| Exact byte versioning | PNG, JPEG, GIF, WebP, BMP, TIFF, AVIF/HEIC, EXR, SVG, PSD/Krita/XCF/AI, common RAW files, XMP |
-| Built-in raster decode and visual diff | PNG, JPEG, GIF |
-| Structured inspection | SVG dimensions/viewBox only |
-| Embedded generation metadata | PNG `tEXt` and uncompressed `iTXt` |
-| Opaque fallback | Every recognized asset without a built-in decoder |
-
-Tracking support does not imply full visual decoding. Unsupported visual formats
-still retain exact bytes, content identity, manifest history, recipe references,
-and synchronization.
+`pixlog status --porcelain[=v2] -z` preserves Git's machine-readable output.
+PixLog-native inspection commands generally support `--json`; diff also supports
+NDJSON.
 
 ## Project Documents
 
 - [Product specification](docs/PRODUCT_SPEC.md)
 - [Architecture](docs/ARCHITECTURE.md)
+- [Git integration and Phase 1-5 design](docs/GIT_INTEGRATION.md)
 - [Feature progress](docs/FEATURE_PROGRESS.md)
 - [Recipe and provenance format](docs/RECIPE.md)
 
-## Validate
+## Verification
 
 ```bash
 make check

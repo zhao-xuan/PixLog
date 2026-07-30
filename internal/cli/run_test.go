@@ -7,19 +7,30 @@ import (
 	"image/color"
 	"image/png"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pixlog/pixlog/internal/repository"
 )
 
-func TestRunCapturedCommandStagesOutputAndDeletion(t *testing.T) {
-	root := t.TempDir()
-	repo, err := repository.Init(root, false)
-	if err != nil {
-		t.Fatalf("Init: %v", err)
+func TestRunCapturedCommandStagesPointerAndDeletion(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
 	}
+	root := t.TempDir()
 	writeCLIPNG(t, filepath.Join(root, "source.png"))
+	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte(".pixlog/\n"), 0o644); err != nil {
+		t.Fatalf("write .gitignore: %v", err)
+	}
+	runCLIGit(t, root, "init", "--quiet")
+	runCLIGit(t, root, "config", "user.name", "PixLog Test")
+	runCLIGit(t, root, "config", "user.email", "pixlog@example.test")
+	runCLIGit(t, root, "add", "source.png", ".gitignore")
+	runCLIGit(t, root, "commit", "--quiet", "-m", "initial")
+	gitHead := strings.TrimSpace(runCLIGit(t, root, "rev-parse", "HEAD"))
+	t.Setenv("PIXLOG_EXECUTABLE", writeCLIFilterHelper(t))
 
 	previousDirectory, err := os.Getwd()
 	if err != nil {
@@ -31,24 +42,34 @@ func TestRunCapturedCommandStagesOutputAndDeletion(t *testing.T) {
 	t.Cleanup(func() { _ = os.Chdir(previousDirectory) })
 
 	var stdout, stderr bytes.Buffer
+	if exitCode := Run([]string{"init", "--git"}, &stdout, &stderr); exitCode != 0 {
+		t.Fatalf("init --git exit %d, stderr %s", exitCode, stderr.String())
+	}
+	gitRepo, err := repository.OpenGit(root)
+	if err != nil {
+		t.Fatalf("OpenGit: %v", err)
+	}
+	stdout.Reset()
+	stderr.Reset()
 	exitCode := Run([]string{"run", "--redact-args", "--", "cp", "source.png", "output.png"}, &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("run cp exit %d, stderr %s", exitCode, stderr.String())
 	}
-	index, err := repo.ReadIndex()
+	entries, err := gitRepo.CaptureEntries()
 	if err != nil {
-		t.Fatalf("ReadIndex: %v", err)
+		t.Fatalf("CaptureEntries: %v", err)
 	}
-	output, exists := index.Entries["output.png"]
+	output, exists := entries["output.png"]
 	if !exists || output.RecipeOID == "" {
 		t.Fatalf("captured output = %#v, exists %v", output, exists)
 	}
-	if _, exists := index.Entries["source.png"]; exists {
-		t.Fatal("unchanged source was unexpectedly staged")
+	staged := runCLIGit(t, root, "diff", "--cached", "--name-only")
+	if !strings.Contains(staged, "output.png") {
+		t.Fatalf("output was not staged:\n%s", staged)
 	}
-	recipeData, err := repo.Load(output.RecipeOID)
+	_, recipeData, err := gitRepo.RecipeData("", filepath.Join(root, "output.png"))
 	if err != nil {
-		t.Fatalf("Load recipe: %v", err)
+		t.Fatalf("RecipeData: %v", err)
 	}
 	var captured map[string]any
 	if err := json.Unmarshal(recipeData, &captured); err != nil {
@@ -66,6 +87,10 @@ func TestRunCapturedCommandStagesOutputAndDeletion(t *testing.T) {
 	if len(arguments) != 2 || arguments[0] != "<redacted>" || arguments[1] != "<redacted>" {
 		t.Fatalf("recorded arguments = %#v", arguments)
 	}
+	sourceControl := captured["source_control"].(map[string]any)
+	if sourceControl["provider"] != "git" || sourceControl["head_oid"] != gitHead || sourceControl["index_tree_oid"] == "" {
+		t.Fatalf("source control = %#v", sourceControl)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
@@ -73,12 +98,12 @@ func TestRunCapturedCommandStagesOutputAndDeletion(t *testing.T) {
 	if exitCode != 0 {
 		t.Fatalf("run rm exit %d, stderr %s", exitCode, stderr.String())
 	}
-	index, err = repo.ReadIndex()
+	entries, err = gitRepo.CaptureEntries()
 	if err != nil {
-		t.Fatalf("ReadIndex after rm: %v", err)
+		t.Fatalf("CaptureEntries after rm: %v", err)
 	}
-	if _, exists := index.Entries["output.png"]; exists {
-		t.Fatal("deleted output remains in index")
+	if _, exists := entries["output.png"]; exists {
+		t.Fatal("deleted output remains in Git index")
 	}
 
 	stdout.Reset()
@@ -87,13 +112,23 @@ func TestRunCapturedCommandStagesOutputAndDeletion(t *testing.T) {
 	if exitCode != 1 {
 		t.Fatalf("failed command exit %d, stderr %s", exitCode, stderr.String())
 	}
-	index, err = repo.ReadIndex()
+	entries, err = gitRepo.CaptureEntries()
 	if err != nil {
-		t.Fatalf("ReadIndex after failed command: %v", err)
+		t.Fatalf("CaptureEntries after failed command: %v", err)
 	}
-	if _, exists := index.Entries["failed.png"]; exists {
+	if _, exists := entries["failed.png"]; exists {
 		t.Fatal("failed command output was unexpectedly staged")
 	}
+}
+
+func runCLIGit(t *testing.T, directory string, args ...string) string {
+	t.Helper()
+	command := exec.Command("git", append([]string{"-C", directory}, args...)...)
+	output, err := command.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, output)
+	}
+	return string(output)
 }
 
 func writeCLIPNG(t *testing.T, path string) {

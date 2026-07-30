@@ -89,10 +89,21 @@ func (r *Repository) CheckPolicy(filePath string, options imaging.DiffOptions) (
 	if err != nil {
 		return PolicyCheckResult{}, err
 	}
+	return evaluatePolicy(absolutePolicyPath, policy, index.Entries, diff, r.Root, r.Load, options)
+}
 
+func evaluatePolicy(
+	absolutePolicyPath string,
+	policy Policy,
+	entries map[string]Entry,
+	diff DiffReport,
+	root string,
+	loadObject func(string) ([]byte, error),
+	options imaging.DiffOptions,
+) (PolicyCheckResult, error) {
 	changed := make(map[string]AssetDiff, len(diff.Assets))
-	assets := make(map[string]struct{}, len(index.Entries)+len(diff.Assets))
-	for asset := range index.Entries {
+	assets := make(map[string]struct{}, len(entries)+len(diff.Assets))
+	for asset := range entries {
 		assets[asset] = struct{}{}
 	}
 	for _, assetDiff := range diff.Assets {
@@ -109,13 +120,13 @@ func (r *Repository) CheckPolicy(filePath string, options imaging.DiffOptions) (
 				continue
 			}
 			checked[asset] = struct{}{}
-			entry, exists := index.Entries[asset]
+			entry, exists := entries[asset]
 			if exists {
 				violations = append(violations, checkEntryPolicy(ruleIndex, rule, entry)...)
 			}
 			if assetDiff, changedAsset := changed[asset]; changedAsset {
 				violations = append(violations, checkVisualPolicy(ruleIndex, rule, assetDiff)...)
-				maskViolations, err := r.checkMaskPolicy(ruleIndex, rule, assetDiff, options)
+				maskViolations, err := checkMaskPolicy(root, loadObject, ruleIndex, rule, assetDiff, options)
 				if err != nil {
 					return PolicyCheckResult{}, err
 				}
@@ -234,7 +245,7 @@ func checkVisualPolicy(ruleIndex int, rule PolicyRule, asset AssetDiff) []Policy
 	return violations
 }
 
-func (r *Repository) checkMaskPolicy(ruleIndex int, rule PolicyRule, asset AssetDiff, options imaging.DiffOptions) ([]PolicyViolation, error) {
+func checkMaskPolicy(root string, loadObject func(string) ([]byte, error), ruleIndex int, rule PolicyRule, asset AssetDiff, options imaging.DiffOptions) ([]PolicyViolation, error) {
 	if rule.AllowedChangeMask == "" || (asset.Old != nil && asset.New != nil && asset.Old.ContentOID == asset.New.ContentOID) {
 		return nil, nil
 	}
@@ -244,15 +255,15 @@ func (r *Repository) checkMaskPolicy(ruleIndex int, rule PolicyRule, asset Asset
 	if asset.Old == nil || asset.New == nil {
 		return []PolicyViolation{violation("visual_diff_unavailable", fmt.Sprintf("cannot evaluate %s asset against allowed-change mask", asset.Kind))}, nil
 	}
-	oldData, err := r.Load(asset.Old.ContentOID)
+	oldData, err := loadObject(asset.Old.ContentOID)
 	if err != nil {
 		return nil, err
 	}
-	newData, err := r.Load(asset.New.ContentOID)
+	newData, err := loadObject(asset.New.ContentOID)
 	if err != nil {
 		return nil, err
 	}
-	maskPath := filepath.Join(r.Root, filepath.FromSlash(path.Clean(filepath.ToSlash(rule.AllowedChangeMask))))
+	maskPath := filepath.Join(root, filepath.FromSlash(path.Clean(filepath.ToSlash(rule.AllowedChangeMask))))
 	maskData, err := os.ReadFile(maskPath)
 	if err != nil {
 		return nil, fmt.Errorf("read allowed-change mask %s: %w", rule.AllowedChangeMask, err)

@@ -1,9 +1,10 @@
 # Recipe and Provenance Format
 
 The current schema identifier is `pixlog.recipe/v1`. A recipe is normalized JSON,
-stored in the same SHA-256 object store as image bytes, and referenced by an asset
-entry. Only `schema` and non-empty `kind` are mandatory in the alpha; the remaining
-shape is intentionally extensible while adapters stabilize.
+stored as a SHA-256 object under `.git/pixlog/objects`, and referenced by the image
+pointer. `.git/pixlog/journal.sqlite` associates current output content with its
+recipe before staging. Only `schema` and a non-empty `kind` are mandatory in the
+alpha; the remaining shape stays extensible while adapters stabilize.
 
 ## Recommended Shape
 
@@ -45,6 +46,13 @@ shape is intentionally extensible while adapters stabilize.
     "container_digest": "sha256:...",
     "custom_nodes": []
   },
+  "source_control": {
+    "provider": "git",
+    "head_oid": "...",
+    "branch": "main",
+    "index_tree_oid": "...",
+    "worktree_dirty": false
+  },
   "reproducibility": {
     "status": "unverified"
   }
@@ -59,10 +67,12 @@ pixlog recipe show output.png
 pixlog recipe show --revision HEAD~1 output.png
 pixlog recipe diff HEAD~1 HEAD -- output.png
 pixlog run -- magick input.png -resize 50% output.png
+pixlog reproduce --revision HEAD output.png
 ```
 
-Import updates the staged image entry, so it must be committed afterward. Recipe
-diff flattens nested objects and arrays into stable field paths such as
+Import stores the normalized recipe, records its content association, and restages
+the image so the Git pointer carries the recipe OID. Recipe diff accepts Git
+revisions and flattens nested objects and arrays into stable field paths such as
 `parameters.seed` and `parents[0].asset`.
 
 ## Embedded Adapters
@@ -80,9 +90,27 @@ versions, output OIDs, and tracked deletions. It intentionally omits environment
 variables. `--redact-args` stores `<redacted>` placeholders while running the real
 arguments unchanged.
 
+When command capture runs inside Git, `source_control` describes the state before
+the child command starts. `head_oid` and `index_tree_oid` are immutable identities;
+`branch` is only a display hint. `worktree_dirty = true` means the Git commit alone
+cannot exactly reproduce the source state. The current schema does not embed the
+uncommitted patch.
+
+## Reproduction Guard
+
+`pixlog reproduce` first creates a plan. `--execute` is accepted only when the
+recipe contains a captured command, no argument is redacted, the captured source
+worktree was clean, and the current HEAD/index exactly match the recorded source
+state. Provider-specific AI recipes can be inspected but need adapter executors
+before PixLog can run them.
+
 ## Authority and Portability
 
-The repository recipe is authoritative. Applications may also embed a portable
-copy in PNG/XMP/C2PA later, but embedded metadata can disappear during screenshot,
-social upload, optimization, or format conversion. A missing embedded record must
-not erase repository provenance.
+The recipe object referenced by the committed pointer is authoritative. Pre-push
+uploads it with the blob and manifest; smudge and historical inspection fetch and
+verify it by SHA-256 when necessary. Legacy `.pixlog-meta` recipes and sidecars
+remain readable, but current writes do not create them.
+
+Applications may also embed a portable copy in PNG/XMP/C2PA, but embedded metadata
+can disappear during screenshot, social upload, optimization, or conversion. A
+missing embedded record must not erase repository provenance.

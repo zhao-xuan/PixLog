@@ -1,0 +1,194 @@
+# PixLog
+
+[English](README.md) | **简体中文**
+
+PixLog 是面向图像资产的 Git 兼容媒体与溯源层。Git 负责索引、提交、分支、合并
+和远程仓库；PixLog 增加：
+
+1. **精确文件历史**：通过 SHA-256 内容寻址媒体对象保存原始字节。
+2. **视觉历史**：提供像素指标、变化区域、热力图和视觉 blame。
+3. **生成历史**：通过配方、本地溯源 journal 和受保护的复现记录生成过程。
+
+Git 提交小型 PixLog pointer，工作树中仍是原始图像字节。PixLog 不创建第二套提交
+图或暂存区。
+
+## 构建
+
+PixLog 需要 Go 1.24 和 Git。
+
+```bash
+make build
+./bin/pixlog version
+```
+
+将两个命令入口安装到 `GOBIN`：
+
+```bash
+go install ./cmd/pixlog ./cmd/git-pixlog
+```
+
+当 `git-pixlog` 位于 `PATH` 中时，`git pixlog diff` 等价于 `pixlog diff`。
+
+## 快速开始
+
+```bash
+git init artwork
+cd artwork
+pixlog init
+
+# 提交共享的跟踪策略；驱动配置和媒体对象保留在 .git/ 中。
+git add .gitattributes .pixlog.toml
+git commit -m "Configure PixLog"
+
+# 直接使用 Git 时也会调用 PixLog clean filter。
+git add assets/hero.png
+pixlog diff --staged
+git commit -m "Add hero artwork"
+git push
+```
+
+Git 索引和提交中保存规范化文本 pointer。clean filter 将原始 blob 和 manifest 保存
+到 `.git/pixlog/objects`；checkout 调用 smudge filter，逐字节恢复图像。
+
+`pixlog add`、`commit`、`push`、`pull`、`branch`、`rebase` 等 Git 所有的命令
+都会进入同一个 Git 操作。`pixlog git <任意命令>` 是显式 Git 逃生入口。
+
+## 跟踪规则
+
+安装默认跟踪常见 PNG、JPEG、GIF、WebP、AVIF、HEIC、TIFF 和 PSD 模式。可以
+添加项目专属模式，重新安装时不会丢失：
+
+```bash
+pixlog track 'art/**/*.kra' 'renders/*.bmp'
+pixlog install
+```
+
+随后提交更新后的 `.gitattributes`。
+
+## 视觉差异
+
+```bash
+# 索引到工作树、HEAD 到索引，或两个 Git revision：
+pixlog diff
+pixlog diff --staged
+pixlog diff HEAD~1 HEAD -- assets/hero.png
+
+# 直接比较与热力图：
+pixlog compare old.png new.png
+pixlog diff --heatmap hero-heatmap.png -- assets/hero.png
+
+# 已安装的 Git 集成：
+git diff -- assets/hero.png
+git difftool --tool=pixlog HEAD~1 HEAD -- assets/hero.png
+```
+
+内置光栅解码目前支持 PNG、JPEG 和 GIF。其他可识别格式仍具有精确字节标识、
+manifest、pointer、配方、传输和锁能力，但可能无法进行视觉比较。
+
+merge driver 只会自动组合尺寸相同且变化像素不冲突的 PNG。所有不安全情况都保留
+为普通 Git 冲突。
+
+## 生成溯源
+
+```bash
+pixlog run -- magick input.png -resize 50% output.png
+pixlog recipe show output.png
+git commit -m "Generate resized artwork"
+
+# 显式附加规范化配方：
+pixlog recipe import output.png examples/recipe.json
+
+# 从经过验证的源状态规划或执行捕获命令：
+pixlog reproduce --revision HEAD output.png
+pixlog reproduce --revision HEAD --execute output.png
+```
+
+`pixlog run` 仅在命令成功后暂存输出，并记录源 HEAD/索引状态。命令参数包含敏感
+信息时请使用 `--redact-args`。PNG 中存在 ComfyUI 或 AUTOMATIC1111 元数据时会
+自动导入。
+
+配方关联记录在 `.git/pixlog/journal.sqlite` 中，因此随后使用普通 `git add` 也会
+把溯源引用写入 pointer。
+
+## 媒体远程与 Hydration
+
+pre-push hook 会扫描即将推送的提交，在 Git 更新 refs 前上传其引用的 blob、
+manifest 和 recipe。已有用户 pre-push hook 会被保留并执行。
+
+本地 Git remote 会自动使用相邻的 `.pixlog` 媒体目录。也可以配置显式文件或
+HTTP Batch endpoint：
+
+```bash
+git config pixlog.remote.origin.endpoint /srv/pixlog/project-media
+# 或
+git config pixlog.remote.origin.endpoint https://media.example.test/project
+```
+
+```bash
+pixlog dehydrate assets/hero.png
+pixlog hydrate assets/hero.png
+pixlog clone /srv/git/artwork.git teammate-copy
+```
+
+文件 endpoint 和 HTTP Batch basic transfer 客户端已经实现。S3/Azure 原生适配器
+以及选择性或延迟 checkout 仍在规划中。
+
+## 历史、完整性与协作
+
+```bash
+pixlog lineage assets/hero.png
+pixlog blame --point 823,441 assets/hero.png
+
+pixlog verify
+pixlog doctor
+
+pixlog lock --remote origin assets/hero.psd
+pixlog locks --remote origin
+pixlog unlock --remote origin assets/hero.psd
+```
+
+lineage 和视觉 blame 会沿 Git 历史跨 rename 跟踪。锁支持本地与共享文件 endpoint；
+HTTP 锁需要未来的服务端实现。
+
+## 策略与 CI
+
+将 [examples/policy.json](examples/policy.json) 作为 `.pixlog-policy.json` 提交，然后
+检查已暂存变更或 Pull Request 范围：
+
+```bash
+pixlog check
+pixlog check --json
+pixlog check --range origin/main...HEAD
+```
+
+规则可以限制格式、大小、配方、视觉变化、SSIM、矩形区域和位图 mask。违反策略时
+命令以状态码 1 退出。
+
+## 命令范围
+
+| 类别 | 命令 |
+| --- | --- |
+| 初始化 | `init`、`install`、`track`、`git install` |
+| 图像状态 | `add`、`status`、`diff`、`compare`、`inspect` |
+| 溯源 | `recipe import/show/diff`、`run`、`reproduce`、`lineage`、`blame` |
+| 媒体 | `hydrate`、`dehydrate`、`verify`、`doctor` |
+| 协作 | `lock`、`unlock`、`locks`、`check` |
+| Git 代理 | `commit`、`log`、`show`、`push`、`pull`、`merge`、`rebase` 等 Git 命令 |
+| 逃生入口 | `pixlog git <任意 Git 命令>` |
+
+`pixlog status --porcelain[=v2] -z` 会保留 Git 的机器可读输出。PixLog 原生检查命令
+通常支持 `--json`，diff 还支持 NDJSON。
+
+## 项目文档
+
+- [产品规格](docs/PRODUCT_SPEC.md)
+- [架构](docs/ARCHITECTURE.md)
+- [Git 集成与 Phase 1-5 设计](docs/GIT_INTEGRATION.md)
+- [功能进度](docs/FEATURE_PROGRESS.md)
+- [配方与溯源格式](docs/RECIPE.md)
+
+## 验证
+
+```bash
+make check
+```

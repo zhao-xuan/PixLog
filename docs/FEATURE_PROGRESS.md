@@ -1,115 +1,170 @@
 # PixLog Feature Progress
 
-Last updated: 2026-07-30
-
 Status meanings:
 
-- **Done**: implemented and covered by an executable test or binary smoke test.
-- **Partial**: usable subset exists; listed limitations remain.
-- **Planned**: product requirement only, not available in the binary.
+- **Done**: implemented and covered by an executable test or build check.
+- **Partial**: a usable subset is implemented; the remaining boundary is listed.
+- **Planned**: product requirement only; it is not available in the binary.
 
-## Current Milestone: Local Binary Alpha
+## Phase Summary
+
+| Phase | Status | Completion boundary |
+| --- | --- | --- |
+| Phase 1: Git-compatible core | **Done** | Git add/commit/checkout use one index and pointer-backed media |
+| Phase 2: Remote | **Partial** | File and HTTP Batch work; cloud/provider adapters do not |
+| Phase 3: Visual experience | **Partial** | CLI, diff driver, difftool, and safe PNG merge work; Web UI and semantic diff do not |
+| Phase 4: AI provenance | **Partial** | Journal, capture, recipes, reproduce guard, and lineage work; API/provider integration does not |
+| Phase 5: Collaboration | **Partial** | File locks, verification, safe merge, and blame work; hosted collaboration does not |
+
+## Phase 1: Git-Compatible Core
+
+**Overall: Done**
 
 | Feature | Status | Evidence / limitation |
 | --- | --- | --- |
-| Single local Go binary | Done | `go build ./cmd/pixlog`; no runtime dependencies |
-| Repository discovery and `.pixlog` control directory | Done | Parent-directory discovery and bare repositories |
-| SHA-256 content-addressed object store | Done | Immutable sharded objects and `pixlog verify` |
-| Index, status, add, remove, commit, log | Done | HEAD/index/worktree state is separated |
-| Exact restore and checkout | Done | Original object bytes are restored |
-| Branches, tags, branch switching | Done | Clean-worktree switching; single-parent commits |
-| JSON/NDJSON output | Done | Status, diff, history queries, sync, locks, policy |
+| Git is the sole VCS authority | Done | Current CLI initialization and VCS commands use Git; no second HEAD/index is created |
+| `pixlog` and `git-pixlog` entry points | Done | Both binaries build from the same CLI; enables `git pixlog` |
+| `pixlog init` / `install` | Done | Idempotently writes attributes/config and local drivers/hooks |
+| `pixlog track` | Done | Custom attribute patterns persist across reinstall |
+| Canonical pointer format | Done | LFS-compatible required fields, validation, and 1024-byte limit tested |
+| Local media CAS | Done | Blob, manifest, and recipe SHA-256 objects are stored under `.git/pixlog` |
+| Git filter-process v2 | Done | Real `git add` stores a pointer and checkout restores exact image bytes |
+| `pixlog add` | Done | Records optional recipe association and stages through Git |
+| Git-backed status and diff | Done | HEAD/index/worktree and arbitrary Git revisions are supported |
+| Porcelain status compatibility | Done | `--porcelain[=v2] -z` is a byte-for-byte Git passthrough |
+| Git command proxy | Done | Arguments and Git exit codes are preserved; `pixlog git ...` is an escape hatch |
+| Legacy Git asset reads | Done | Raw image blobs and valid `.pixlog-meta` sidecars remain readable |
 
-## Visual History
+Phase 1 acceptance is covered by pointer unit tests, filter-process integration,
+CLI proxy tests, clone tests, and the full repository test suite.
 
-| Feature | Status | Evidence / limitation |
-| --- | --- | --- |
-| File and manifest diff | Done | Content OID, format, dimensions, size, visual/recipe IDs |
-| PNG metadata diff | Partial | `tEXt` and uncompressed `iTXt`; EXIF/IPTC/XMP/ICC not parsed |
-| Raster pixel diff | Partial | Built-in PNG/JPEG/GIF decode only |
-| Metrics | Done | Changed ratio, mean channel delta, RMSE, global SSIM |
-| Changed regions | Done | Four-connected components and bounding boxes |
-| Heatmap export | Done | `pixlog diff --heatmap output.png` |
-| Geometry classification | Partial | Identity/resize/dimension heuristics; no registration matrix |
-| Visual point blame | Done | Walks commit history and changed regions |
-| SVG structural diff | Planned | Current implementation records SVG dimensions only |
-| Crop/rotation/flip/perspective alignment | Planned | Requires registration before pixel comparison |
-| Lab/Delta E, edge, alpha-specific, MS-SSIM | Planned | Current engine compares NRGBA channels |
-| AI semantic change summary | Planned | Must be labeled as inferred, never exact history |
+## Phase 2: Remote
 
-## Provenance and AI Workflows
+**Overall: Partial**
 
 | Feature | Status | Evidence / limitation |
 | --- | --- | --- |
-| Canonical recipe object and recipe OID | Done | Normalized JSON stored in CAS |
-| Manual recipe import/show/diff | Done | Field-level flattened diff |
+| Pre-push media ordering | Done | Referenced blob/manifest/recipe objects upload before Git refs |
+| Existing hook preservation | Done | A prior pre-push hook is retained and executed by the dispatcher |
+| Local path and `file://` endpoint | Done | Upload, fetch, verification, dehydrate, and rehydrate round trip tested |
+| HTTP Batch client | Done | Basic upload/download actions, headers, and verify action tested |
+| Fetch-on-smudge | Done | Missing local objects are fetched from the configured `origin` endpoint |
+| Explicit hydrate/dehydrate | Done | Tracked pointer assets round trip between pointer and exact worktree bytes |
+| Clone integration | Done | Clone installs local drivers/hook and hydrates from a file endpoint |
+| `pixlog push/pull/fetch/clone` Git routing | Done | Commands enter Git's implementation rather than maintaining PixLog refs |
+| Direct S3-compatible adapter | Planned | Use an HTTP Batch service or file endpoint today |
+| Direct Azure Blob adapter | Planned | Use an HTTP Batch service or file endpoint today |
+| Hosted PixLog object service | Planned | This repository provides the client protocol, not a hosted server |
+| Delayed/preview/metadata-only checkout | Planned | Current smudge and clone hydrate full original bytes |
+
+## Phase 3: Visual Experience
+
+**Overall: Partial**
+
+| Feature | Status | Evidence / limitation |
+| --- | --- | --- |
+| Worktree, staged, and revision diff | Done | Uses Git snapshots and hydrates PixLog pointers transparently |
+| Native `git diff` driver | Done | Deterministic text output with visual metrics and changed regions |
+| Git difftool integration | Done | `difftool.pixlog.cmd` invokes direct image comparison |
+| Direct file comparison | Done | `pixlog compare OLD NEW` works without snapshot selection |
+| File and manifest diff | Done | Exact content, format, dimensions, size, visual hash, and recipe IDs |
+| Raster pixel diff | Partial | Built-in decode supports PNG, JPEG, and GIF |
+| PNG metadata diff | Partial | `tEXt` and uncompressed `iTXt`; no complete EXIF/IPTC/XMP/ICC parser |
+| Metrics and changed regions | Done | Change ratio, mean delta, RMSE, global SSIM, and connected regions |
+| Heatmap export | Done | `pixlog diff --heatmap` writes a PNG for one changed asset |
+| Conservative visual merge | Partial | Same-size, non-conflicting PNG pixels merge; other cases stay conflicted |
+| Geometric registration | Planned | Crop, translation, rotation, flip, and perspective are not aligned |
+| Local Web UI | Planned | No swipe/onion-skin/review UI is shipped |
+| AI semantic change summary | Planned | No inferred natural-language summary is emitted |
+
+## Phase 4: AI Provenance
+
+**Overall: Partial**
+
+| Feature | Status | Evidence / limitation |
+| --- | --- | --- |
+| Canonical recipe object and OID | Done | Normalized `pixlog.recipe/v1` JSON is stored in CAS |
+| SQLite generation journal | Done | Content OID to recipe OID association is tested |
+| Ordinary `git add` recipe attachment | Done | Clean filter queries the journal and embeds the recipe OID in the pointer |
 | ComfyUI PNG adapter | Done | Captures embedded workflow and prompt graph |
-| AUTOMATIC1111 PNG adapter | Done | Captures raw parameters text |
-| Recipe attached to image commit history | Done | Entry carries immutable recipe OID |
-| Strict recipe JSON Schema validation | Partial | `schema` and `kind` validated; nested fields are extensible |
-| Reference/mask/model artifact verification | Planned | Schema can describe them, but hashes are not resolved yet |
-| `pixlog run -- command` capture | Done | Successful output delta is staged with command recipe; arguments can be redacted |
-| AI API proxy and SDK | Planned | No network or provider integration in alpha |
-| Reproduce a historical generation | Planned | Needs adapter-specific executors and dependency hydration |
-| C2PA import/export/signature verification | Planned | Repository provenance remains unsigned |
-| XMP sidecar semantic parsing | Planned | XMP is currently tracked as an exact sidecar blob |
+| AUTOMATIC1111 PNG adapter | Done | Captures embedded parameters text |
+| `pixlog run -- command` | Done | Successful output/deletion delta is staged with Git source context |
+| Manual recipe import/show/diff | Done | Import records journal association; historical field diff is supported |
+| Guarded reproduction | Partial | Captured commands require matching clean HEAD/index; provider executors are absent |
+| Git lineage | Partial | Path history follows renames; reference/mask/model DAG traversal is absent |
+| Strict published JSON Schema | Partial | Top-level schema/kind are checked; nested provider fields remain extensible |
+| AI API proxy and SDK | Planned | No request interception or provider SDK is shipped |
+| Reference/mask/model resolution | Planned | Recipes may describe dependencies but do not hydrate and verify all of them |
+| C2PA import/export/signature verification | Planned | Repository provenance is not signed |
 
-## Sync and Collaboration
+## Phase 5: Collaboration
 
-| Feature | Status | Evidence / limitation |
-| --- | --- | --- |
-| Local path and `file://` remote | Done | Push/fetch/pull/clone round-trip tested |
-| Object-before-ref push ordering | Done | Remote ref updates only after verified object copy |
-| Fast-forward protection | Done | Divergent push/pull is rejected |
-| Object integrity verification | Done | SHA-256 checked on transfer and by `verify` |
-| Local/shared-filesystem asset locks | Done | Atomic acquisition and owner-checked release |
-| SSH remote | Planned | Transport abstraction not implemented |
-| Azure Blob and S3-compatible remote | Planned | Requires object-store adapters and auth |
-| Lazy/preview-only clone and hydrate | Planned | Clone currently downloads all objects |
-| Git LFS Batch API compatibility | Planned | No HTTP server/protocol adapter |
-| Binary delta/chunking | Planned | Needs benchmark before adopting CDC or packs |
-
-## Policy and CI
+**Overall: Partial**
 
 | Feature | Status | Evidence / limitation |
 | --- | --- | --- |
-| Staged-change policy command | Done | `pixlog check` exits nonzero on violations |
-| Format, size, recipe rules | Done | Evaluated against the staged index |
-| Max visual change and minimum SSIM | Done | Evaluated against HEAD-to-index diff |
-| Rectangular allowed-change regions | Done | Changed boxes must be fully contained |
-| Bitmap mask policy | Done | Light/opaque pixels allow edits; changed pixels outside fail CI |
-| Visual bisect | Done | Finds first SSIM/RMSE/change-ratio crossing against a baseline |
+| Local asset locks | Done | Atomic acquisition, ownership checks, listing, and release tested |
+| Shared file-endpoint locks | Done | Two clients contend through the same lock directory |
+| HTTP lock service | Planned | HTTP endpoints currently transfer objects only |
+| Object verification | Done | `verify` detects missing or deliberately corrupted CAS objects |
+| Installation diagnostics | Done | `doctor` checks filter, diff, merge, attributes, hook, config, and objects |
+| Safe region merge | Done | Non-overlapping PNG edits merge and produce a provenance recipe |
+| Visual point blame | Done | Git history and rename-aware changed regions identify the introducing commit |
+| Server-side pointer validation | Planned | No pre-receive service is included |
+| GitHub Checks integration | Planned | CI can run `pixlog check`, but no Checks API publisher exists |
+| Review/approval UI | Planned | No comments, ratings, approvals, or browser review surface exists |
 
-## Product Surface Not Yet Implemented
+## Policy And CI
 
-- Automatic image merge; flattened binary assets use locks and ours/theirs in the target design.
-- Git commit/tree interoperability. The alpha is a standalone Git-like repository.
-- SQLite metadata/search index, tags, ratings, reviews, approvals, OCR, face/place search.
-- Lineage DAG across reference images. Current lineage is per-path commit history.
-- Local Web UI. This is intentionally not part of the binary alpha milestone.
-- MCP server and agent query API.
+| Feature | Status | Evidence / limitation |
+| --- | --- | --- |
+| Staged policy check | Done | Evaluates Git HEAD to index and exits nonzero on violations |
+| Git revision-range policy | Done | Supports `A..B` and merge-base semantics for `A...B` |
+| Format, size, and recipe rules | Done | Evaluated against the selected Git snapshot |
+| Maximum change and minimum SSIM | Done | Uses the visual diff engine |
+| Rectangular allowed regions | Done | Changed boxes must be fully contained |
+| Bitmap mask policy | Done | Changed pixels outside allowed mask pixels fail CI |
+
+## Compatibility And Deferred Surface
+
+- Existing raw image Git blobs and legacy `.pixlog-meta` sidecars are read-only
+  compatibility inputs. New writes use pointers and CAS objects.
+- The old standalone repository package remains for compatibility and future
+  migration work; the current CLI uses Git as its version-control authority.
+- Historical Git LFS pointers that are not PixLog pointers are not hydrated.
+- SVG structural diff, advanced color metrics, OCR, face/place search, tags,
+  ratings, approvals, MCP, and agent APIs remain planned.
 
 ## Verification Record
 
-Validated on macOS arm64 with Go 1.24.3 on 2026-07-30:
+The current tree was validated in an isolated Git configuration:
 
 ```text
-go test ./... -count=1
+GIT_CONFIG_GLOBAL=/dev/null GOTELEMETRY=off go test ./... -count=1
+  cmd/git-pixlog       NO TEST FILES
+  cmd/pixlog           NO TEST FILES
+  internal/cli         PASS
   internal/imaging     PASS
+  internal/recipe      NO TEST FILES
   internal/repository  PASS
-
-binary smoke workflow
-  init/add/commit      PASS
-  lock contention      PASS (second owner exits 1)
-  policy failure       PASS (exits 1)
-  policy success       PASS (exits 0)
 ```
+
+Focused executable coverage includes:
+
+- Real Git clean/smudge add and checkout.
+- Pointer/CAS recipe and manifest integrity.
+- File and HTTP Batch upload/download/verify.
+- Pre-push preservation and media ordering.
+- Clone installation and hydration.
+- Non-overlap merge and overlap conflict.
+- Rename-aware lineage and visual blame.
+- Reproduction source-state guards.
+- Git command exit codes and porcelain output.
 
 ## Next Development Order
 
-1. Expand automated CLI process tests for all JSON contracts.
-2. Add image registration for crop, translation, rotation, and flip.
-3. Add SSH remote and lazy object hydration behind a remote interface.
-4. Validate recipes with a published JSON Schema and resolve dependency OIDs.
-5. Add C2PA/XMP adapters, then optional AI semantic summaries.
-6. Add structured SVG diff and creative-format adapters.
+1. Add direct S3/Azure adapters or ship a first-party HTTP Batch service.
+2. Add delayed and selective hydration for large repositories.
+3. Build the local visual review UI and richer image registration.
+4. Add provider API capture/execution and reference-asset lineage.
+5. Add HTTP locks, server validation, and hosted review/Checks integration.
