@@ -1,0 +1,6 @@
+.DS_Store
+.pixlog/
+/bin/
+/dist/
+/pixlog
+*.test

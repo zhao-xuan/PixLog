@@ -1,0 +1,39 @@
+{
+  "schema": "pixlog.recipe/v1",
+  "kind": "ai-generation",
+  "tool": {
+    "name": "ComfyUI",
+    "version": "0.x",
+    "adapter_version": "1.0.0"
+  },
+  "parents": [
+    {
+      "asset": "sha256:replace-with-reference-content-oid",
+      "role": "reference-image"
+    }
+  ],
+  "model": {
+    "provider": "local",
+    "name": "replace-with-model-name",
+    "file_hash": "sha256:replace-with-model-file-oid",
+    "license": "unknown"
+  },
+  "parameters": {
+    "prompt": "A product photograph on a clean background",
+    "negative_prompt": "text, watermark",
+    "seed": 183729,
+    "steps": 28,
+    "cfg": 6.5,
+    "sampler": "replace-with-sampler",
+    "width": 1024,
+    "height": 1024
+  },
+  "environment": {
+    "os": "darwin",
+    "gpu": "replace-with-device",
+    "custom_nodes": []
+  },
+  "reproducibility": {
+    "status": "unverified"
+  }
+}
