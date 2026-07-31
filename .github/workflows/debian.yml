@@ -34,6 +34,7 @@ jobs:
           fetch-depth: 0
       - name: Build source and binary packages
         run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git archive --format=tar.gz --prefix=pixlog-0.1.0/ v0.1.0 > ../pixlog_0.1.0.orig.tar.gz
           dpkg-buildpackage -us -uc
       - name: Run Lintian
