@@ -31,12 +31,73 @@ func OpenProvenanceJournal(start string) (*ProvenanceJournal, error) {
 	for _, statement := range []string{
 		"PRAGMA busy_timeout = 5000",
 		"PRAGMA journal_mode = WAL",
+		"PRAGMA foreign_keys = ON",
 		`CREATE TABLE IF NOT EXISTS provenance (
 			content_oid TEXT PRIMARY KEY,
 			recipe_oid TEXT NOT NULL,
 			asset_path TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS capture_sessions (
+			id TEXT PRIMARY KEY,
+			adapter TEXT NOT NULL,
+			adapter_version TEXT NOT NULL,
+			application TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			started_at TEXT NOT NULL,
+			ended_at TEXT,
+			metadata_json BLOB NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS capture_events (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL REFERENCES capture_sessions(id) ON DELETE CASCADE,
+			sequence INTEGER NOT NULL,
+			event_type TEXT NOT NULL,
+			transaction_id TEXT NOT NULL,
+			occurred_at TEXT NOT NULL,
+			fidelity TEXT NOT NULL,
+			raw_payload_oid TEXT NOT NULL,
+			normalized_json BLOB NOT NULL,
+			UNIQUE(session_id, sequence)
+		)`,
+		`CREATE TABLE IF NOT EXISTS capture_jobs (
+			id TEXT PRIMARY KEY,
+			session_id TEXT REFERENCES capture_sessions(id) ON DELETE SET NULL,
+			provider TEXT NOT NULL,
+			external_id TEXT NOT NULL,
+			status TEXT NOT NULL,
+			request_oid TEXT NOT NULL,
+			response_oid TEXT NOT NULL,
+			started_at TEXT NOT NULL,
+			finished_at TEXT,
+			metadata_json BLOB NOT NULL,
+			UNIQUE(provider, external_id)
+		)`,
+		`CREATE TABLE IF NOT EXISTS capture_checkpoints (
+			id TEXT PRIMARY KEY,
+			session_id TEXT NOT NULL REFERENCES capture_sessions(id) ON DELETE CASCADE,
+			document_id TEXT NOT NULL,
+			reason TEXT NOT NULL,
+			content_oid TEXT NOT NULL,
+			recipe_oid TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			metadata_json BLOB NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS capture_artifacts (
+			id TEXT PRIMARY KEY,
+			session_id TEXT REFERENCES capture_sessions(id) ON DELETE SET NULL,
+			job_id TEXT REFERENCES capture_jobs(id) ON DELETE SET NULL,
+			event_id TEXT REFERENCES capture_events(id) ON DELETE SET NULL,
+			role TEXT NOT NULL,
+			content_oid TEXT NOT NULL,
+			recipe_oid TEXT NOT NULL,
+			asset_path TEXT NOT NULL,
+			created_at TEXT NOT NULL
+		)`,
+		`CREATE INDEX IF NOT EXISTS capture_events_session_idx
+		 ON capture_events(session_id, sequence)`,
+		`CREATE INDEX IF NOT EXISTS capture_artifacts_content_idx
+		 ON capture_artifacts(content_oid)`,
 	} {
 		if _, err := database.Exec(statement); err != nil {
 			database.Close()

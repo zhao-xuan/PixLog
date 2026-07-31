@@ -4,11 +4,57 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 )
 
 const Schema = "pixlog.recipe/v1"
+
+type CaptureFidelity string
+
+const (
+	FidelityExactRequest       CaptureFidelity = "exact-request"
+	FidelityExactCommand       CaptureFidelity = "exact-command"
+	FidelityEmbeddedMetadata   CaptureFidelity = "embedded-metadata"
+	FidelityApplicationHistory CaptureFidelity = "application-history"
+	FidelityUIObserved         CaptureFidelity = "ui-observed"
+	FidelityInferred           CaptureFidelity = "inferred"
+)
+
+type ReproducibilityStatus string
+
+const (
+	ReproducibilityExact               ReproducibilityStatus = "exact"
+	ReproducibilityBestEffort          ReproducibilityStatus = "best-effort"
+	ReproducibilityRequestReproducible ReproducibilityStatus = "request-reproducible"
+	ReproducibilityProvenanceOnly      ReproducibilityStatus = "provenance-only"
+	ReproducibilityInferred            ReproducibilityStatus = "inferred"
+	ReproducibilityUnverified          ReproducibilityStatus = "unverified"
+)
+
+var sha256OIDPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+
+func (fidelity CaptureFidelity) Valid() bool {
+	switch fidelity {
+	case FidelityExactRequest, FidelityExactCommand, FidelityEmbeddedMetadata,
+		FidelityApplicationHistory, FidelityUIObserved, FidelityInferred:
+		return true
+	default:
+		return false
+	}
+}
+
+func (status ReproducibilityStatus) Valid() bool {
+	switch status {
+	case ReproducibilityExact, ReproducibilityBestEffort,
+		ReproducibilityRequestReproducible, ReproducibilityProvenanceOnly,
+		ReproducibilityInferred, ReproducibilityUnverified:
+		return true
+	default:
+		return false
+	}
+}
 
 type Change struct {
 	Field string `json:"field"`
@@ -33,6 +79,15 @@ func Normalize(data []byte) ([]byte, error) {
 	kind, _ := document["kind"].(string)
 	if strings.TrimSpace(kind) == "" {
 		return nil, errors.New("recipe field \"kind\" is required")
+	}
+	if err := validateCapture(document["capture"]); err != nil {
+		return nil, err
+	}
+	if err := validateReproducibility(document["reproducibility"]); err != nil {
+		return nil, err
+	}
+	if err := validateVendor(document["vendor"]); err != nil {
+		return nil, err
 	}
 	normalized, err := json.Marshal(document)
 	if err != nil {
@@ -62,7 +117,13 @@ func FromEmbedded(metadata map[string]string) ([]byte, bool, error) {
 			},
 			"workflow": workflowValue,
 			"capture": map[string]any{
-				"source": "png-embedded-metadata",
+				"source":          "png-embedded-metadata",
+				"adapter":         "comfyui-png",
+				"adapter_version": "1",
+				"fidelity":        FidelityEmbeddedMetadata,
+			},
+			"reproducibility": map[string]any{
+				"status": ReproducibilityBestEffort,
 			},
 		}
 		if prompt := values["prompt"]; prompt != "" {
@@ -86,13 +147,82 @@ func FromEmbedded(metadata map[string]string) ([]byte, bool, error) {
 				"raw": parameters,
 			},
 			"capture": map[string]any{
-				"source": "png-embedded-metadata",
+				"source":          "png-embedded-metadata",
+				"adapter":         "automatic1111-png",
+				"adapter_version": "1",
+				"fidelity":        FidelityEmbeddedMetadata,
+			},
+			"reproducibility": map[string]any{
+				"status": ReproducibilityBestEffort,
 			},
 		}
 		data, err := json.Marshal(document)
 		return data, true, err
 	}
 	return nil, false, nil
+}
+
+func validateCapture(value any) error {
+	if value == nil {
+		return nil
+	}
+	capture, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("recipe field \"capture\" must be an object")
+	}
+	value, exists := capture["fidelity"]
+	if !exists {
+		return nil
+	}
+	fidelity, ok := value.(string)
+	if !ok {
+		return errors.New("recipe field \"capture.fidelity\" must be a string")
+	}
+	if !CaptureFidelity(fidelity).Valid() {
+		return fmt.Errorf("unsupported recipe capture fidelity %q", fidelity)
+	}
+	return nil
+}
+
+func validateReproducibility(value any) error {
+	if value == nil {
+		return nil
+	}
+	reproducibility, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("recipe field \"reproducibility\" must be an object")
+	}
+	value, exists := reproducibility["status"]
+	if !exists {
+		return nil
+	}
+	status, ok := value.(string)
+	if !ok {
+		return errors.New("recipe field \"reproducibility.status\" must be a string")
+	}
+	if !ReproducibilityStatus(status).Valid() {
+		return fmt.Errorf("unsupported recipe reproducibility status %q", status)
+	}
+	return nil
+}
+
+func validateVendor(value any) error {
+	if value == nil {
+		return nil
+	}
+	vendor, ok := value.(map[string]any)
+	if !ok {
+		return errors.New("recipe field \"vendor\" must be an object")
+	}
+	value, exists := vendor["raw_payload_oid"]
+	if !exists {
+		return nil
+	}
+	oid, ok := value.(string)
+	if !ok || !sha256OIDPattern.MatchString(oid) {
+		return errors.New("recipe field \"vendor.raw_payload_oid\" must be a sha256 OID")
+	}
+	return nil
 }
 
 func Diff(oldData, newData []byte) ([]Change, error) {

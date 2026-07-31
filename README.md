@@ -1,3 +1,7 @@
+<p align="center">
+   <img src="docs/assets/pixlog-logo.png" alt="PixLog logo" width="600">
+</p>
+
 # PixLog
 
 **English** | [简体中文](README.zh-CN.md)

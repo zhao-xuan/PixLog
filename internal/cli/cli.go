@@ -140,6 +140,8 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = runCheck(args[1:], stdout, stderr)
 	case "run":
 		err = runCapturedCommand(args[1:], stdout, stderr)
+	case "capture":
+		err = runCapture(args[1:], stdout, stderr)
 	case "bisect":
 		err = runBisect(args[1:], stdout, stderr)
 	default:
@@ -1868,6 +1870,7 @@ Image and provenance:
 	inspect    Show an asset manifest and provenance IDs
 	recipe     Import, inspect, and compare generation recipes
 	run        Capture a command and stage its changed image outputs
+	capture    Run the capture daemon, proxies, health checks, and platform guides
 	reproduce  Plan or execute a source-state-validated captured command
 	lineage    Show rename-aware Git image history
 	blame      Find the Git commit that last changed an image point
