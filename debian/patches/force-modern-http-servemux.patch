@@ -1,0 +1,20 @@
+Description: Preserve modern ServeMux semantics in GOPATH builds
+ Debian's Go build system uses GOPATH mode, so the go directive from go.mod is
+ not available when the linker selects GODEBUG defaults. PixLog's capture API
+ uses method-aware patterns introduced in Go 1.22. Embed the modern ServeMux
+ default in both command binaries.
+Author: Xuan Zhao <zhaoxuan0914@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-07-31
+
+--- a/cmd/git-pixlog/main.go
++++ b/cmd/git-pixlog/main.go
+@@ -1 +1,2 @@
++//go:debug httpmuxgo121=0
+ package main
+
+--- a/cmd/pixlog/main.go
++++ b/cmd/pixlog/main.go
+@@ -1 +1,2 @@
++//go:debug httpmuxgo121=0
+ package main
