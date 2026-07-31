@@ -37,6 +37,12 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           git archive --format=tar.gz --prefix=pixlog-0.1.0/ v0.1.0 > ../pixlog_0.1.0.orig.tar.gz
           dpkg-buildpackage -us -uc
+      - name: Install and smoke test package
+        run: |
+          apt-get install --yes ../pixlog_0.1.0-1_*.deb
+          test "$(pixlog version)" = "pixlog 0.1.0"
+          test "$(git-pixlog version)" = "pixlog 0.1.0"
+          test "$(git pixlog version)" = "pixlog 0.1.0"
       - name: Run Lintian
         run: lintian --fail-on error ../pixlog_0.1.0-1_*.changes
       - name: Stage package artifacts
