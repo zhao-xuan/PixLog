@@ -23,7 +23,7 @@ Depends:
  ${shlibs:Depends},
 Built-Using: ${misc:Built-Using}
 Description: Git-compatible provenance layer for image assets
- PixLog stores image media and provenance alongside Git while leaving commits,
- branches, merges, and remotes under Git's control. It provides content-addressed
- media storage, visual diffs, reproducible recipes, capture workflows, and
- integrity checks for image assets.
+ PixLog stores image media and provenance alongside Git while leaving
+ commits, branches, merges, and remotes under Git's control. It provides
+ content-addressed media storage, visual diffs, reproducible recipes, capture
+ workflows, and integrity checks for image assets.
