@@ -1,0 +1,6 @@
+#!/bin/sh
+
+set -eu
+
+pixlog version | grep -F "pixlog 0.1.0"
+git pixlog version | grep -F "pixlog 0.1.0"

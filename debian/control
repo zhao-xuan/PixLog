@@ -1,0 +1,29 @@
+Source: pixlog
+Section: graphics
+Priority: optional
+Maintainer: Xuan Zhao <zhaoxuan0914@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-golang,
+ git <!nocheck>,
+ golang-any,
+ golang-modernc-sqlite-dev,
+Standards-Version: 4.7.2
+Homepage: https://github.com/zhao-xuan/PixLog
+Vcs-Browser: https://github.com/zhao-xuan/PixLog/tree/debian/sid
+Vcs-Git: https://github.com/zhao-xuan/PixLog.git -b debian/sid
+Rules-Requires-Root: no
+XS-Go-Import-Path: github.com/pixlog/pixlog
+
+Package: pixlog
+Architecture: any
+Depends:
+ git,
+ ${misc:Depends},
+ ${shlibs:Depends},
+Built-Using: ${misc:Built-Using}
+Description: Git-compatible provenance layer for image assets
+ PixLog stores image media and provenance alongside Git while leaving commits,
+ branches, merges, and remotes under Git's control. It provides content-addressed
+ media storage, visual diffs, reproducible recipes, capture workflows, and
+ integrity checks for image assets.

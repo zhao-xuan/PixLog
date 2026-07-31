@@ -1,0 +1,57 @@
+.TH PIXLOG 1 "2026-07-31" "pixlog 0.1.0" "User Commands"
+.SH NAME
+pixlog \- Git-compatible provenance layer for image assets
+.SH SYNOPSIS
+.B pixlog
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B pixlog
+stores image media and provenance alongside Git while Git continues to own the
+index, commits, branches, merges, and remotes. Git commits contain small PixLog
+pointers and working trees contain the original image bytes.
+.SH COMMON COMMANDS
+.TP
+.B init
+Initialize PixLog integration in the current Git repository.
+.TP
+.B track
+Add image path patterns to the repository tracking policy.
+.TP
+.B status
+Show repository and tracked image state.
+.TP
+.B diff
+Compare working, staged, or committed image states.
+.TP
+.B inspect
+Inspect an image and its PixLog metadata.
+.TP
+.B verify
+Verify tracked media and provenance integrity.
+.TP
+.B doctor
+Check repository configuration and object availability.
+.TP
+.B help
+Show the complete command list and command usage.
+.SH GIT INTEGRATION
+When
+.B git-pixlog
+is available on PATH,
+.B git pixlog
+invokes the same command surface. Run
+.B pixlog install
+inside a repository to configure PixLog's Git integration.
+.SH FILES
+.TP
+.I .pixlog.toml
+Repository tracking and policy configuration.
+.TP
+.I .git/pixlog/
+Local object storage, journals, locks, and integration state.
+.SH SEE ALSO
+.BR git (1),
+.BR git-pixlog (1)
+.SH AUTHOR
+Xuan Zhao <zhaoxuan0914@gmail.com>

@@ -1,0 +1,11 @@
+PixLog Debian packaging
+=======================
+
+The packaging branch follows DEP-14 and starts from the corresponding upstream
+release tag. Obtain the byte-identical upstream tarball before a source build:
+
+    origtargz
+    gbp buildpackage
+
+The temporary GitHub Vcs fields should move to the Debian Go Packaging Team's
+Salsa namespace before the first archive upload.

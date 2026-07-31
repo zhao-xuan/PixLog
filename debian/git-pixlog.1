@@ -1,0 +1,20 @@
+.TH GIT-PIXLOG 1 "2026-07-31" "pixlog 0.1.0" "User Commands"
+.SH NAME
+git-pixlog \- invoke PixLog as a Git subcommand
+.SH SYNOPSIS
+.B git pixlog
+.I command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B git-pixlog
+is the Git subcommand entry point for PixLog. Git translates
+.B git pixlog diff
+into an invocation of
+.BR git-pixlog (1).
+It provides the same commands and behavior as
+.BR pixlog (1).
+.SH SEE ALSO
+.BR git (1),
+.BR pixlog (1)
+.SH AUTHOR
+Xuan Zhao <zhaoxuan0914@gmail.com>

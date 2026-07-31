@@ -1,0 +1,52 @@
+name: Debian package
+
+on:
+  push:
+    branches: [debian/sid]
+  pull_request:
+    branches: [debian/sid]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build on Debian sid
+    runs-on: ubuntu-latest
+    container: debian:sid-slim
+    timeout-minutes: 30
+    steps:
+      - name: Install packaging tools
+        run: |
+          apt-get update
+          apt-get install --yes --no-install-recommends \
+            build-essential \
+            ca-certificates \
+            debhelper \
+            devscripts \
+            dh-golang \
+            git \
+            golang-any \
+            golang-modernc-sqlite-dev \
+            lintian
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Build source and binary packages
+        run: |
+          git archive --format=tar.gz --prefix=pixlog-0.1.0/ v0.1.0 > ../pixlog_0.1.0.orig.tar.gz
+          dpkg-buildpackage -us -uc
+      - name: Run Lintian
+        run: lintian --fail-on error ../pixlog_0.1.0-1_*.changes
+      - name: Upload packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: pixlog-debian-0.1.0-1
+          path: |
+            ../pixlog_0.1.0-1_*.buildinfo
+            ../pixlog_0.1.0-1_*.changes
+            ../pixlog_0.1.0-1_*.deb
+            ../pixlog_0.1.0-1.debian.tar.xz
+            ../pixlog_0.1.0-1.dsc
+            ../pixlog_0.1.0.orig.tar.gz
+          if-no-files-found: error
