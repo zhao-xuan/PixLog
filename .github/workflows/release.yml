@@ -3,7 +3,7 @@ name: Release
 on:
   push:
     tags:
-      - "v[0-9]+.[0-9]+.[0-9]+*"
+      - "v[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: read
@@ -19,6 +19,15 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
+      - name: Validate release tag
+        env:
+          TAG: ${{ github.ref_name }}
+        shell: bash
+        run: |
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid semantic version tag: $TAG" >&2
+            exit 1
+          fi
       - run: make check
 
   build:
