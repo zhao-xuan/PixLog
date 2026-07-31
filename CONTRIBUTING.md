@@ -27,6 +27,6 @@ migration explicitly.
 ## Releases
 
 Maintainers publish releases from a clean, tested `main` branch by pushing an
-annotated semantic version tag such as `v0.2.0`. The Release workflow builds and
+annotated semantic version tag such as `v0.1.0`. The Release workflow builds and
 publishes all supported archives; release binaries should not be committed to
 the repository.

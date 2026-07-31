@@ -20,7 +20,7 @@ import (
 	"github.com/pixlog/pixlog/internal/repository"
 )
 
-var Version = "0.2.0-dev"
+var Version = "0.1.0-dev"
 
 type repositoryView interface {
 	Status() (repository.Status, error)

@@ -71,7 +71,7 @@ jobs:
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: make package VERSION="0.2.0-dev+${GITHUB_SHA::7}"
+        run: make package VERSION="0.1.0-dev+${GITHUB_SHA::7}"
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:

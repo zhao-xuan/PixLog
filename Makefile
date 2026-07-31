@@ -1,6 +1,6 @@
 PIXLOG_BINARY := bin/pixlog
 GIT_PIXLOG_BINARY := bin/git-pixlog
-VERSION ?= 0.2.0-dev
+VERSION ?= 0.1.0-dev
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 DIST_DIR ?= dist

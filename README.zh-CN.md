@@ -22,6 +22,12 @@ Git 提交小型 PixLog pointer，工作树中仍是原始图像字节。PixLog 
 
 PixLog 需要 Go 1.24 和 Git。
 
+使用 Homebrew 安装：
+
+```bash
+brew install zhao-xuan/tap/pixlog
+```
+
 可以从[最新版本](https://github.com/zhao-xuan/PixLog/releases/latest)下载 Linux、
 macOS 或 Windows 预编译包。每个压缩包都包含 `pixlog` 和 `git-pixlog`，并提供相邻
 的 SHA-256 校验文件。
@@ -267,27 +273,27 @@ GitHub Actions 会对每次向 `main` 的 push 和 Pull Request 执行格式检�
 `main` 检查通过后，维护者可以推送语义化版本标签来发布：
 
 ```bash
-git tag -a v0.2.0 -m "PixLog v0.2.0"
-git push origin v0.2.0
+git tag -a v0.1.0 -m "PixLog v0.1.0"
+git push origin v0.1.0
 ```
 
 发布工作流会再次验证仓库，构建 amd64 与 arm64 压缩包，生成 SHA-256 校验文件，
-并发布带自动生成说明的 GitHub Release。带后缀的标签（例如 `v0.2.0-rc.1`）会成为
+并发布带自动生成说明的 GitHub Release。带后缀的标签（例如 `v0.1.0-rc.1`）会成为
 预发布版本。
 
 ## 命令范围
 
-| 类别 | 命令 |
-| --- | --- |
-| 初始化 | `init`、`install`、`track`、`git install` |
-| 图像状态 | `add`、`status`、`diff`、`compare`、`inspect` |
-| 溯源 | `recipe import/show/diff/infer`、`run`、`reproduce`、`lineage`、`blame` |
-| 捕获 | `capture serve/status/token/guide/proxy/history/sessions/show/finalize` |
-| Metadata | `metadata inspect/import`、`c2pa verify/import/export/sign` |
-| 媒体 | `hydrate`、`dehydrate`、`verify`、`doctor` |
-| 协作 | `lock`、`unlock`、`locks`、`check` |
+| 类别     | 命令                                                                                 |
+| -------- | ------------------------------------------------------------------------------------ |
+| 初始化   | `init`、`install`、`track`、`git install`                                    |
+| 图像状态 | `add`、`status`、`diff`、`compare`、`inspect`                              |
+| 溯源     | `recipe import/show/diff/infer`、`run`、`reproduce`、`lineage`、`blame`    |
+| 捕获     | `capture serve/status/token/guide/proxy/history/sessions/show/finalize`            |
+| Metadata | `metadata inspect/import`、`c2pa verify/import/export/sign`                      |
+| 媒体     | `hydrate`、`dehydrate`、`verify`、`doctor`                                   |
+| 协作     | `lock`、`unlock`、`locks`、`check`                                           |
 | Git 代理 | `commit`、`log`、`show`、`push`、`pull`、`merge`、`rebase` 等 Git 命令 |
-| 逃生入口 | `pixlog git <任意 Git 命令>` |
+| 逃生入口 | `pixlog git <任意 Git 命令>`                                                       |
 
 `pixlog status --porcelain[=v2] -z` 会保留 Git 的机器可读输出。PixLog 原生检查命令
 通常支持 `--json`，diff 还支持 NDJSON。

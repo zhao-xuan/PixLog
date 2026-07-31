@@ -27,6 +27,12 @@ There is no second PixLog commit graph or staging area.
 
 PixLog requires Go 1.24 and Git.
 
+Install with Homebrew:
+
+```bash
+brew install zhao-xuan/tap/pixlog
+```
+
 Download a prebuilt archive for Linux, macOS, or Windows from the
 [latest release](https://github.com/zhao-xuan/PixLog/releases/latest). Each
 archive contains both `pixlog` and `git-pixlog`, with an adjacent SHA-256
@@ -283,13 +289,13 @@ After `main` is green, maintainers can publish a release by pushing a semantic
 version tag:
 
 ```bash
-git tag -a v0.2.0 -m "PixLog v0.2.0"
-git push origin v0.2.0
+git tag -a v0.1.0 -m "PixLog v0.1.0"
+git push origin v0.1.0
 ```
 
 The release workflow verifies the repository again, builds amd64 and arm64
 archives, generates SHA-256 checksums, and publishes a GitHub Release with
-generated notes. Tags containing a suffix such as `v0.2.0-rc.1` become
+generated notes. Tags containing a suffix such as `v0.1.0-rc.1` become
 pre-releases.
 
 ## Command Surface

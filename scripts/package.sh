@@ -41,7 +41,7 @@ CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
   go build -trimpath -ldflags "$ldflags" -o "${staging_dir}/pixlog${binary_extension}" ./cmd/pixlog
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
   go build -trimpath -ldflags "$ldflags" -o "${staging_dir}/git-pixlog${binary_extension}" ./cmd/git-pixlog
-cp README.md README.zh-CN.md "$staging_dir/"
+cp LICENSE README.md README.zh-CN.md "$staging_dir/"
 
 if [[ "$goos" == "windows" ]]; then
   asset_name="${archive_name}.zip"
