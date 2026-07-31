@@ -16,9 +16,43 @@ asset was made.
    <img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go version">
 </p>
 
-<p align="center">
-   <img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog stages an image edit, reports visual metrics and changed regions, commits it, and identifies the responsible commit with visual blame." width="100%">
-</p>
+## Demos
+
+<table>
+   <thead>
+      <tr>
+         <th width="56%">Recorded workflow</th>
+         <th width="22%">Before</th>
+         <th width="22%">After</th>
+      </tr>
+   </thead>
+   <tbody>
+      <tr>
+         <td><strong>Visual history</strong><br><img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog stages an image edit, reports visual metrics, commits it, and identifies the responsible commit with visual blame." width="100%"></td>
+         <td><img src="marketing/assets/demo/hero-original.png" alt="Original Earthrise launch artwork before the safe edit." width="100%"><br><sub>Original artwork</sub></td>
+         <td><img src="marketing/assets/demo/hero-safe-edit.png" alt="Earthrise launch artwork after a bounded safe edit." width="100%"><br><sub>Bounded safe edit</sub></td>
+      </tr>
+      <tr>
+         <td><strong>Policy check</strong><br><img src="docs/assets/demos/pixlog-policy-check.gif" alt="PixLog previews a broad image change and rejects it against the repository policy." width="100%"></td>
+         <td><img src="marketing/assets/demo/hero-safe-edit.png" alt="Policy-compliant artwork before the unsafe edit." width="100%"><br><sub>Policy-compliant state</sub></td>
+         <td><img src="marketing/assets/demo/hero-policy-violation.png" alt="Artwork after an unsafe whole-image color change." width="100%"><br><sub>Rejected whole-image edit</sub></td>
+      </tr>
+      <tr>
+         <td><strong>Visual blame</strong><br><img src="docs/assets/demos/pixlog-visual-blame.gif" alt="PixLog traces a selected image region to the commit that changed it." width="100%"></td>
+         <td><img src="marketing/assets/demo/hero-original.png" alt="Original artwork before the attributed change." width="100%"><br><sub>Previous revision</sub></td>
+         <td><img src="marketing/assets/demo/hero-safe-edit.png" alt="Artwork containing the region attributed by visual blame." width="100%"><br><sub>Attributed revision</sub></td>
+      </tr>
+      <tr>
+         <td><strong>AI provenance</strong><br><img src="docs/assets/demos/pixlog-ai-provenance.gif" alt="PixLog inspects an AI-generated poster and shows its recorded model, prompt, source, and reproducibility status." width="100%"></td>
+         <td><img src="marketing/assets/sources/stable-diffusion-3.5-astronaut.webp" alt="Stable Diffusion 3.5 Large source image before normalization." width="100%"><br><sub>Imported source</sub></td>
+         <td><img src="marketing/assets/demo/ai-poster.png" alt="Normalized 16 by 9 AI poster tracked by PixLog." width="100%"><br><sub>Tracked 16:9 poster</sub></td>
+      </tr>
+   </tbody>
+</table>
+
+The stills use the same deterministic ImageMagick operations as the recordings.
+Source and license details are documented in
+[marketing/assets/sources/README.md](marketing/assets/sources/README.md).
 
 ```bash
 brew install zhao-xuan/tap/pixlog

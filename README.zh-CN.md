@@ -15,9 +15,42 @@
 	<img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go 版本">
 </p>
 
-<p align="center">
-   <img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog 暂存图片修改，显示视觉指标和变化区域，提交修改，并通过视觉 blame 找到对应提交。" width="100%">
-</p>
+## 演示
+
+<table>
+	<thead>
+		<tr>
+			<th width="56%">操作录屏</th>
+			<th width="22%">修改前</th>
+			<th width="22%">修改后</th>
+		</tr>
+	</thead>
+	<tbody>
+		<tr>
+			<td><strong>视觉历史</strong><br><img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog 暂存图片修改、显示视觉指标、提交修改，并通过视觉 blame 找到对应提交。" width="100%"></td>
+			<td><img src="marketing/assets/demo/hero-original.png" alt="安全编辑前的原始地出宣传图。" width="100%"><br><sub>原始图片</sub></td>
+			<td><img src="marketing/assets/demo/hero-safe-edit.png" alt="完成受限安全编辑后的地出宣传图。" width="100%"><br><sub>受限安全编辑</sub></td>
+		</tr>
+		<tr>
+			<td><strong>策略检查</strong><br><img src="docs/assets/demos/pixlog-policy-check.gif" alt="PixLog 预览大范围图片修改，并依据仓库策略拒绝该修改。" width="100%"></td>
+			<td><img src="marketing/assets/demo/hero-safe-edit.png" alt="非安全编辑前符合策略的图片。" width="100%"><br><sub>符合策略的状态</sub></td>
+			<td><img src="marketing/assets/demo/hero-policy-violation.png" alt="整张图片被非安全调色后的状态。" width="100%"><br><sub>被拒绝的全图修改</sub></td>
+		</tr>
+		<tr>
+			<td><strong>视觉 blame</strong><br><img src="docs/assets/demos/pixlog-visual-blame.gif" alt="PixLog 将选中的图片区域追溯到修改该区域的提交。" width="100%"></td>
+			<td><img src="marketing/assets/demo/hero-original.png" alt="被追溯修改之前的原始图片。" width="100%"><br><sub>上一个 revision</sub></td>
+			<td><img src="marketing/assets/demo/hero-safe-edit.png" alt="包含 visual blame 所追溯区域的图片。" width="100%"><br><sub>被归因的 revision</sub></td>
+		</tr>
+		<tr>
+			<td><strong>AI 溯源</strong><br><img src="docs/assets/demos/pixlog-ai-provenance.gif" alt="PixLog 检查 AI 生成海报，并显示记录的模型、提示词、来源和可复现状态。" width="100%"></td>
+			<td><img src="marketing/assets/sources/stable-diffusion-3.5-astronaut.webp" alt="标准化之前的 Stable Diffusion 3.5 Large 来源图片。" width="100%"><br><sub>导入的来源图片</sub></td>
+			<td><img src="marketing/assets/demo/ai-poster.png" alt="由 PixLog 跟踪的标准化 16 比 9 AI 海报。" width="100%"><br><sub>被跟踪的 16:9 海报</sub></td>
+		</tr>
+	</tbody>
+</table>
+
+静态图使用与录屏相同且确定性的 ImageMagick 操作生成。来源及许可证信息记录在
+[marketing/assets/sources/README.md](marketing/assets/sources/README.md)。
 
 ```bash
 brew install zhao-xuan/tap/pixlog

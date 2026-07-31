@@ -4,5 +4,8 @@
 /dist/
 /pixlog
 *.test
-/marketing
-/scripts/marketing
+/marketing/*
+!/marketing/assets/
+!/marketing/assets/**
+/scripts/marketing/*
+!/scripts/marketing/export-readme-assets.sh
