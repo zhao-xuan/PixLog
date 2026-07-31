@@ -1,9 +1,6 @@
 package imaging
 
 import (
-	"bufio"
-	"bytes"
-	"encoding/binary"
 	"encoding/xml"
 	"fmt"
 	"image"
@@ -99,6 +96,10 @@ func InspectFile(path, contentOID string) (Manifest, error) {
 	}
 	if extension == ".png" {
 		manifest.EmbeddedMetadata = readPNGText(path)
+	} else if extension == ".jpg" || extension == ".jpeg" {
+		manifest.EmbeddedMetadata = readJPEGMetadata(path)
+	} else if extension == ".xmp" {
+		manifest.EmbeddedMetadata = readXMPMetadata(path)
 	}
 	return manifest, nil
 }
@@ -195,79 +196,4 @@ func perceptualHash(path string) string {
 		}
 	}
 	return fmt.Sprintf("dhash:%016x", hash)
-}
-
-func readPNGText(path string) map[string]string {
-	file, err := os.Open(path)
-	if err != nil {
-		return nil
-	}
-	defer file.Close()
-	reader := bufio.NewReader(file)
-	signature := make([]byte, 8)
-	if _, err := io.ReadFull(reader, signature); err != nil || string(signature) != "\x89PNG\r\n\x1a\n" {
-		return nil
-	}
-	metadata := map[string]string{}
-	for {
-		header := make([]byte, 8)
-		if _, err := io.ReadFull(reader, header); err != nil {
-			break
-		}
-		length := binary.BigEndian.Uint32(header[:4])
-		chunkType := string(header[4:])
-		if length > 16<<20 {
-			break
-		}
-		data := make([]byte, length)
-		if _, err := io.ReadFull(reader, data); err != nil {
-			break
-		}
-		if _, err := io.CopyN(io.Discard, reader, 4); err != nil {
-			break
-		}
-		switch chunkType {
-		case "tEXt":
-			if key, value, ok := strings.Cut(string(data), "\x00"); ok && key != "" {
-				metadata[key] = value
-			}
-		case "iTXt":
-			if key, value, ok := parseITXt(data); ok {
-				metadata[key] = value
-			}
-		case "IEND":
-			if len(metadata) == 0 {
-				return nil
-			}
-			return metadata
-		}
-	}
-	if len(metadata) == 0 {
-		return nil
-	}
-	return metadata
-}
-
-func parseITXt(data []byte) (string, string, bool) {
-	keywordEnd := bytes.IndexByte(data, 0)
-	if keywordEnd <= 0 || keywordEnd > 79 || len(data) < keywordEnd+3 {
-		return "", "", false
-	}
-	keyword := string(data[:keywordEnd])
-	remainder := data[keywordEnd+1:]
-	compressionFlag, compressionMethod := remainder[0], remainder[1]
-	if compressionFlag != 0 || compressionMethod != 0 {
-		return "", "", false
-	}
-	remainder = remainder[2:]
-	languageEnd := bytes.IndexByte(remainder, 0)
-	if languageEnd < 0 {
-		return "", "", false
-	}
-	remainder = remainder[languageEnd+1:]
-	translatedKeywordEnd := bytes.IndexByte(remainder, 0)
-	if translatedKeywordEnd < 0 {
-		return "", "", false
-	}
-	return keyword, string(remainder[translatedKeywordEnd+1:]), true
 }

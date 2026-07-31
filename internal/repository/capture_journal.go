@@ -73,6 +73,49 @@ type CaptureArtifact struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+func (journal *ProvenanceJournal) CaptureSession(id string) (CaptureSession, error) {
+	row := journal.database.QueryRow(
+		`SELECT id, adapter, adapter_version, application, document_id,
+		 started_at, ended_at, metadata_json
+		 FROM capture_sessions WHERE id = ?`, id,
+	)
+	session, err := scanCaptureSession(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return CaptureSession{}, fmt.Errorf("capture session %s does not exist", id)
+	}
+	if err != nil {
+		return CaptureSession{}, fmt.Errorf("query capture session: %w", err)
+	}
+	return session, nil
+}
+
+func (journal *ProvenanceJournal) CaptureSessions(limit int) ([]CaptureSession, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 100
+	}
+	rows, err := journal.database.Query(
+		`SELECT id, adapter, adapter_version, application, document_id,
+		 started_at, ended_at, metadata_json
+		 FROM capture_sessions ORDER BY started_at DESC LIMIT ?`, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query capture sessions: %w", err)
+	}
+	defer rows.Close()
+	sessions := []CaptureSession{}
+	for rows.Next() {
+		session, err := scanCaptureSession(rows)
+		if err != nil {
+			return nil, fmt.Errorf("scan capture session: %w", err)
+		}
+		sessions = append(sessions, session)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate capture sessions: %w", err)
+	}
+	return sessions, nil
+}
+
 func (journal *ProvenanceJournal) StartCaptureSession(session CaptureSession) (CaptureSession, error) {
 	if strings.TrimSpace(session.Adapter) == "" {
 		return CaptureSession{}, errors.New("capture session adapter is required")
@@ -204,6 +247,110 @@ func (journal *ProvenanceJournal) CaptureEvents(sessionID string) ([]CaptureEven
 		return nil, fmt.Errorf("iterate capture events: %w", err)
 	}
 	return events, nil
+}
+
+func (journal *ProvenanceJournal) CaptureJobs(sessionID string) ([]CaptureJob, error) {
+	rows, err := journal.database.Query(
+		`SELECT id, COALESCE(session_id, ''), provider, external_id, status,
+		 request_oid, response_oid, started_at, finished_at, metadata_json
+		 FROM capture_jobs WHERE session_id = ? ORDER BY started_at`, sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query capture jobs: %w", err)
+	}
+	defer rows.Close()
+	jobs := []CaptureJob{}
+	for rows.Next() {
+		var job CaptureJob
+		var startedAt string
+		var finishedAt sql.NullString
+		if err := rows.Scan(
+			&job.ID, &job.SessionID, &job.Provider, &job.ExternalID, &job.Status,
+			&job.RequestOID, &job.ResponseOID, &startedAt, &finishedAt, &job.Metadata,
+		); err != nil {
+			return nil, fmt.Errorf("scan capture job: %w", err)
+		}
+		job.StartedAt, err = time.Parse(time.RFC3339Nano, startedAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse capture job start time: %w", err)
+		}
+		if finishedAt.Valid {
+			value, parseErr := time.Parse(time.RFC3339Nano, finishedAt.String)
+			if parseErr != nil {
+				return nil, fmt.Errorf("parse capture job finish time: %w", parseErr)
+			}
+			job.FinishedAt = &value
+		}
+		jobs = append(jobs, job)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate capture jobs: %w", err)
+	}
+	return jobs, nil
+}
+
+func (journal *ProvenanceJournal) CaptureCheckpoints(sessionID string) ([]CaptureCheckpoint, error) {
+	rows, err := journal.database.Query(
+		`SELECT id, session_id, document_id, reason, content_oid, recipe_oid,
+		 created_at, metadata_json
+		 FROM capture_checkpoints WHERE session_id = ? ORDER BY created_at`, sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query capture checkpoints: %w", err)
+	}
+	defer rows.Close()
+	checkpoints := []CaptureCheckpoint{}
+	for rows.Next() {
+		var checkpoint CaptureCheckpoint
+		var createdAt string
+		if err := rows.Scan(
+			&checkpoint.ID, &checkpoint.SessionID, &checkpoint.DocumentID, &checkpoint.Reason,
+			&checkpoint.ContentOID, &checkpoint.RecipeOID, &createdAt, &checkpoint.Metadata,
+		); err != nil {
+			return nil, fmt.Errorf("scan capture checkpoint: %w", err)
+		}
+		checkpoint.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse capture checkpoint time: %w", err)
+		}
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate capture checkpoints: %w", err)
+	}
+	return checkpoints, nil
+}
+
+func (journal *ProvenanceJournal) CaptureArtifacts(sessionID string) ([]CaptureArtifact, error) {
+	rows, err := journal.database.Query(
+		`SELECT id, COALESCE(session_id, ''), COALESCE(job_id, ''), COALESCE(event_id, ''),
+		 role, content_oid, recipe_oid, asset_path, created_at
+		 FROM capture_artifacts WHERE session_id = ? ORDER BY created_at`, sessionID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query capture artifacts: %w", err)
+	}
+	defer rows.Close()
+	artifacts := []CaptureArtifact{}
+	for rows.Next() {
+		var artifact CaptureArtifact
+		var createdAt string
+		if err := rows.Scan(
+			&artifact.ID, &artifact.SessionID, &artifact.JobID, &artifact.EventID, &artifact.Role,
+			&artifact.ContentOID, &artifact.RecipeOID, &artifact.AssetPath, &createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("scan capture artifact: %w", err)
+		}
+		artifact.CreatedAt, err = time.Parse(time.RFC3339Nano, createdAt)
+		if err != nil {
+			return nil, fmt.Errorf("parse capture artifact time: %w", err)
+		}
+		artifacts = append(artifacts, artifact)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate capture artifacts: %w", err)
+	}
+	return artifacts, nil
 }
 
 func (journal *ProvenanceJournal) UpsertCaptureJob(job CaptureJob) (CaptureJob, error) {
@@ -369,4 +516,33 @@ func validCaptureJobStatus(status string) bool {
 	default:
 		return false
 	}
+}
+
+type captureSessionScanner interface {
+	Scan(...any) error
+}
+
+func scanCaptureSession(scanner captureSessionScanner) (CaptureSession, error) {
+	var session CaptureSession
+	var startedAt string
+	var endedAt sql.NullString
+	if err := scanner.Scan(
+		&session.ID, &session.Adapter, &session.AdapterVersion, &session.Application,
+		&session.DocumentID, &startedAt, &endedAt, &session.Metadata,
+	); err != nil {
+		return CaptureSession{}, err
+	}
+	var err error
+	session.StartedAt, err = time.Parse(time.RFC3339Nano, startedAt)
+	if err != nil {
+		return CaptureSession{}, fmt.Errorf("parse capture session start time: %w", err)
+	}
+	if endedAt.Valid {
+		value, parseErr := time.Parse(time.RFC3339Nano, endedAt.String)
+		if parseErr != nil {
+			return CaptureSession{}, fmt.Errorf("parse capture session finish time: %w", parseErr)
+		}
+		session.EndedAt = &value
+	}
+	return session, nil
 }

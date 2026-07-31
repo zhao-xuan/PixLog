@@ -2,6 +2,12 @@
 
 [English](README.md) | **简体中文**
 
+<p align="center">
+	<a href="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml"><img src="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
+	<a href="https://github.com/zhao-xuan/PixLog/releases/latest"><img src="https://img.shields.io/github/v/release/zhao-xuan/PixLog?display_name=tag&sort=semver" alt="最新版本"></a>
+	<img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go 版本">
+</p>
+
 PixLog 是面向图像资产的 Git 兼容媒体与溯源层。Git 负责索引、提交、分支、合并
 和远程仓库；PixLog 增加：
 
@@ -15,6 +21,12 @@ Git 提交小型 PixLog pointer，工作树中仍是原始图像字节。PixLog 
 ## 构建
 
 PixLog 需要 Go 1.24 和 Git。
+
+可以从[最新版本](https://github.com/zhao-xuan/PixLog/releases/latest)下载 Linux、
+macOS 或 Windows 预编译包。每个压缩包都包含 `pixlog` 和 `git-pixlog`，并提供相邻
+的 SHA-256 校验文件。
+
+从源码构建：
 
 ```bash
 make build
@@ -164,6 +176,21 @@ pixlog check --range origin/main...HEAD
 规则可以限制格式、大小、配方、视觉变化、SSIM、矩形区域和位图 mask。违反策略时
 命令以状态码 1 退出。
 
+GitHub Actions 会对每次向 `main` 的 push 和 Pull Request 执行格式检查、测试、
+`go vet`，并构建两个命令。成功运行后会保留 Linux、macOS 和 Windows 的可下载
+产物七天。
+
+`main` 检查通过后，维护者可以推送语义化版本标签来发布：
+
+```bash
+git tag -a v0.2.0 -m "PixLog v0.2.0"
+git push origin v0.2.0
+```
+
+发布工作流会再次验证仓库，构建 amd64 与 arm64 压缩包，生成 SHA-256 校验文件，
+并发布带自动生成说明的 GitHub Release。带后缀的标签（例如 `v0.2.0-rc.1`）会成为
+预发布版本。
+
 ## 命令范围
 
 | 类别 | 命令 |
@@ -186,6 +213,8 @@ pixlog check --range origin/main...HEAD
 - [Git 集成与 Phase 1-5 设计](docs/GIT_INTEGRATION.md)
 - [功能进度](docs/FEATURE_PROGRESS.md)
 - [配方与溯源格式](docs/RECIPE.md)
+- [参与贡献](CONTRIBUTING.md)
+- [安全策略](SECURITY.md)
 
 ## 验证
 

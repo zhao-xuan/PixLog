@@ -1,0 +1,42 @@
+{
+  "id": "com.pixlog.capture",
+  "name": "PixLog Capture",
+  "version": "0.1.0",
+  "main": "index.html",
+  "manifestVersion": 5,
+  "host": [
+    {
+      "app": "PS",
+      "minVersion": "25.0.0"
+    }
+  ],
+  "entrypoints": [
+    {
+      "type": "panel",
+      "id": "pixlogCapturePanel",
+      "label": {
+        "default": "PixLog Capture"
+      },
+      "minimumSize": {
+        "width": 280,
+        "height": 320
+      },
+      "preferredDockedSize": {
+        "width": 320,
+        "height": 480
+      },
+      "preferredFloatingSize": {
+        "width": 360,
+        "height": 520
+      }
+    }
+  ],
+  "requiredPermissions": {
+    "network": {
+      "domains": [
+        "http://127.0.0.1:4777",
+        "http://localhost:4777"
+      ]
+    }
+  }
+}

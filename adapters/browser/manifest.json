@@ -1,0 +1,24 @@
+{
+  "manifest_version": 3,
+  "name": "PixLog Capture",
+  "version": "0.1.0",
+  "description": "User-triggered provenance capture for image tools without a native API.",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "storage",
+    "downloads"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:4777/*",
+    "http://localhost:4777/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Capture with PixLog"
+  },
+  "options_page": "options.html"
+}

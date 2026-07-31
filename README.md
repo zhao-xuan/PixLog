@@ -6,6 +6,12 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
+<p align="center">
+   <a href="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml"><img src="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
+   <a href="https://github.com/zhao-xuan/PixLog/releases/latest"><img src="https://img.shields.io/github/v/release/zhao-xuan/PixLog?display_name=tag&sort=semver" alt="Latest release"></a>
+   <img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go version">
+</p>
+
 PixLog is a Git-compatible media and provenance layer for image assets. Git owns
 the index, commits, branches, merges, and remotes. PixLog adds:
 
@@ -20,6 +26,13 @@ There is no second PixLog commit graph or staging area.
 ## Build
 
 PixLog requires Go 1.24 and Git.
+
+Download a prebuilt archive for Linux, macOS, or Windows from the
+[latest release](https://github.com/zhao-xuan/PixLog/releases/latest). Each
+archive contains both `pixlog` and `git-pixlog`, with an adjacent SHA-256
+checksum file.
+
+To build from source:
 
 ```bash
 make build
@@ -174,6 +187,23 @@ pixlog check --range origin/main...HEAD
 Rules can constrain format, size, recipe presence, visual change, SSIM, rectangular
 regions, and bitmap masks. A violation exits with status 1.
 
+GitHub Actions runs formatting checks, tests, `go vet`, and builds both commands
+for every push and pull request to `main`. Successful runs retain downloadable
+Linux, macOS, and Windows artifacts for seven days.
+
+After `main` is green, maintainers can publish a release by pushing a semantic
+version tag:
+
+```bash
+git tag -a v0.2.0 -m "PixLog v0.2.0"
+git push origin v0.2.0
+```
+
+The release workflow verifies the repository again, builds amd64 and arm64
+archives, generates SHA-256 checksums, and publishes a GitHub Release with
+generated notes. Tags containing a suffix such as `v0.2.0-rc.1` become
+pre-releases.
+
 ## Command Surface
 
 | Area | Commands |
@@ -197,6 +227,8 @@ NDJSON.
 - [Git integration and Phase 1-5 design](docs/GIT_INTEGRATION.md)
 - [Feature progress](docs/FEATURE_PROGRESS.md)
 - [Recipe and provenance format](docs/RECIPE.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## Verification
 

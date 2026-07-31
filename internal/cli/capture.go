@@ -18,11 +18,12 @@ import (
 	"time"
 
 	"github.com/pixlog/pixlog/internal/capture"
+	"github.com/pixlog/pixlog/internal/repository"
 )
 
 func runCapture(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: pixlog capture <serve|status|token|guide|proxy> [options]")
+		return errors.New("usage: pixlog capture <serve|status|token|guide|proxy|sessions|show|finalize> [options]")
 	}
 	switch args[0] {
 	case "serve":
@@ -35,9 +36,92 @@ func runCapture(args []string, stdout, stderr io.Writer) error {
 		return runCaptureGuide(args[1:], stdout, stderr)
 	case "proxy":
 		return runCaptureProxy(args[1:], stdout, stderr)
+	case "sessions":
+		return runCaptureSessions(args[1:], stdout, stderr)
+	case "show":
+		return runCaptureShow(args[1:], stdout, stderr)
+	case "finalize":
+		return runCaptureFinalize(args[1:], stdout, stderr)
 	default:
 		return fmt.Errorf("unknown capture command %q", args[0])
 	}
+}
+
+func runCaptureSessions(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("capture sessions", stderr)
+	limit := flags.Int("limit", 20, "maximum sessions to return")
+	asJSON := flags.Bool("json", false, "emit machine-readable sessions")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 || *limit <= 0 {
+		return errors.New("usage: pixlog capture sessions [--limit <count>] [--json]")
+	}
+	journal, err := repository.OpenProvenanceJournal("")
+	if err != nil {
+		return err
+	}
+	defer journal.Close()
+	sessions, err := journal.CaptureSessions(*limit)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, sessions)
+	}
+	for _, session := range sessions {
+		status := "active"
+		if session.EndedAt != nil {
+			status = "finished"
+		}
+		fmt.Fprintf(stdout, "%-42s %-24s %-8s %s\n", session.ID, session.Adapter, status, session.StartedAt.Local().Format(time.RFC3339))
+	}
+	return nil
+}
+
+func runCaptureShow(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("capture show", stderr)
+	asJSON := flags.Bool("json", false, "emit machine-readable session detail")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 1 {
+		return errors.New("usage: pixlog capture show [--json] <session-id>")
+	}
+	detail, err := capture.LoadSession("", flags.Arg(0))
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, detail)
+	}
+	fmt.Fprintf(stdout, "%s (%s %s)\n", detail.Session.ID, detail.Session.Adapter, detail.Session.AdapterVersion)
+	fmt.Fprintf(stdout, "  events %d  jobs %d  checkpoints %d  artifacts %d\n", len(detail.Events), len(detail.Jobs), len(detail.Checkpoints), len(detail.Artifacts))
+	for _, event := range detail.Events {
+		fmt.Fprintf(stdout, "  %4d  %-28s %s\n", event.Sequence, event.EventType, event.Fidelity)
+	}
+	return nil
+}
+
+func runCaptureFinalize(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("capture finalize", stderr)
+	kind := flags.String("kind", "", "override the canonical recipe kind")
+	asJSON := flags.Bool("json", false, "emit machine-readable result")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 2 {
+		return errors.New("usage: pixlog capture finalize [--kind <kind>] [--json] <session-id> <asset>")
+	}
+	result, err := capture.FinalizeSession("", flags.Arg(0), flags.Arg(1), *kind)
+	if err != nil {
+		return err
+	}
+	if *asJSON {
+		return writeJSON(stdout, result)
+	}
+	fmt.Fprintf(stdout, "Finalized session %s as recipe %s for %s\n", result.SessionID, repository.ShortOID(result.RecipeOID), result.AssetPath)
+	return nil
 }
 
 func runCaptureProxy(args []string, stdout, stderr io.Writer) error {

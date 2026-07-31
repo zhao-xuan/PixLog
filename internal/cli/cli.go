@@ -20,7 +20,7 @@ import (
 	"github.com/pixlog/pixlog/internal/repository"
 )
 
-const Version = "0.2.0-dev"
+var Version = "0.2.0-dev"
 
 type repositoryView interface {
 	Status() (repository.Status, error)
@@ -142,6 +142,10 @@ func Run(args []string, stdout, stderr io.Writer) int {
 		err = runCapturedCommand(args[1:], stdout, stderr)
 	case "capture":
 		err = runCapture(args[1:], stdout, stderr)
+	case "metadata":
+		err = runMetadata(args[1:], stdout, stderr)
+	case "c2pa":
+		err = runC2PA(args[1:], stdout, stderr)
 	case "bisect":
 		err = runBisect(args[1:], stdout, stderr)
 	default:
@@ -1180,15 +1184,41 @@ func runRestore(args []string, stdout, stderr io.Writer) error {
 func runLineage(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("lineage", stderr)
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	asGraph := flags.Bool("graph", false, "traverse recipe inputs, outputs, models, and vendor payloads")
+	verify := flags.Bool("verify", false, "fail when a referenced object is missing or corrupt")
+	hydrate := flags.Bool("hydrate", false, "fetch missing referenced objects from the origin endpoint")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("usage: pixlog lineage [--json] <asset>")
+		return errors.New("usage: pixlog lineage [--graph] [--verify] [--hydrate] [--json] <asset>")
 	}
 	repo, err := repository.OpenGit("")
 	if err != nil {
 		return err
+	}
+	if *asGraph || *verify || *hydrate {
+		graph, err := repo.ProvenanceGraph(flags.Arg(0), *hydrate)
+		if err != nil {
+			return err
+		}
+		if *asJSON {
+			if err := writeJSON(stdout, graph); err != nil {
+				return err
+			}
+		} else {
+			fmt.Fprintf(stdout, "%s: %d nodes, %d edges\n", graph.Asset, len(graph.Nodes), len(graph.Edges))
+			for _, edge := range graph.Edges {
+				fmt.Fprintf(stdout, "  %s -> %s  %s\n", repository.ShortOID(edge.From), repository.ShortOID(edge.To), edge.Role)
+			}
+			for _, oid := range graph.Missing {
+				fmt.Fprintf(stdout, "  missing %s\n", oid)
+			}
+		}
+		if *verify && len(graph.Missing) > 0 {
+			return fmt.Errorf("lineage verification found %d missing object(s)", len(graph.Missing))
+		}
+		return nil
 	}
 	nodes, err := repo.Lineage(flags.Arg(0))
 	if err != nil {
@@ -1871,6 +1901,8 @@ Image and provenance:
 	recipe     Import, inspect, and compare generation recipes
 	run        Capture a command and stage its changed image outputs
 	capture    Run the capture daemon, proxies, health checks, and platform guides
+	metadata   Inspect or import EXIF, XMP, ICC, IPTC, PNG, and C2PA metadata
+	c2pa       Verify, import, export, and sign Content Credentials with c2patool
 	reproduce  Plan or execute a source-state-validated captured command
 	lineage    Show rename-aware Git image history
 	blame      Find the Git commit that last changed an image point

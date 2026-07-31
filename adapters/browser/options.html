@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body { max-width: 620px; margin: 40px auto; font: 14px sans-serif; }
+      label { display: block; margin: 14px 0 4px; }
+      input { width: 100%; box-sizing: border-box; padding: 7px; }
+      button { margin-top: 16px; padding: 8px 18px; }
+      #status { margin-left: 10px; }
+    </style>
+  </head>
+  <body>
+    <h1>PixLog Capture</h1>
+    <label for="daemon-url">Daemon URL</label>
+    <input id="daemon-url" value="http://127.0.0.1:4777">
+    <label for="capture-token">Capture token</label>
+    <input id="capture-token" type="password" autocomplete="off">
+    <button id="save">Save and test</button><span id="status"></span>
+    <script src="options.js"></script>
+  </body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      body { padding: 14px; color: var(--uxp-host-text-color); font: 12px sans-serif; }
+      label { display: block; margin: 10px 0 4px; }
+      input { width: 100%; box-sizing: border-box; }
+      .actions { display: flex; gap: 8px; margin-top: 14px; }
+      button { flex: 1; }
+      #status { margin-top: 12px; line-height: 1.45; }
+      .muted { opacity: 0.72; }
+    </style>
+  </head>
+  <body>
+    <sp-heading size="S">PixLog Capture</sp-heading>
+    <label for="daemon-url">Daemon URL</label>
+    <input id="daemon-url" value="http://127.0.0.1:4777">
+    <label for="capture-token">Capture token</label>
+    <input id="capture-token" type="password" autocomplete="off">
+    <div class="actions">
+      <button id="start">Start</button>
+      <button id="stop" disabled>Stop</button>
+    </div>
+    <div class="actions">
+      <button id="checkpoint" disabled>Create checkpoint</button>
+    </div>
+    <div id="status" class="muted">Not capturing</div>
+    <script src="main.js"></script>
+  </body>
+</html>

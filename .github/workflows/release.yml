@@ -1,18 +1,12 @@
-name: CI
+name: Release
 
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+*"
 
 permissions:
   contents: read
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   verify:
@@ -25,20 +19,7 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Check formatting
-        shell: bash
-        run: |
-          unformatted="$(gofmt -l .)"
-          if [[ -n "$unformatted" ]]; then
-            printf 'Run gofmt on:\n%s\n' "$unformatted"
-            exit 1
-          fi
-      - name: Test, vet, and build
-        run: make check
-      - name: Smoke test binaries
-        run: |
-          ./bin/pixlog version
-          ./bin/git-pixlog version
+      - run: make check
 
   build:
     name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
@@ -67,15 +48,42 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Package binaries
+      - name: Package release
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-        run: make package VERSION="0.2.0-dev+${GITHUB_SHA::7}"
-      - name: Upload binaries
+        run: make package VERSION="$GITHUB_REF_NAME"
+      - name: Upload release asset
         uses: actions/upload-artifact@v4
         with:
-          name: pixlog-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: release-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*
           if-no-files-found: error
-          retention-days: 7
+
+  publish:
+    name: Publish GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: dist
+          merge-multiple: true
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        shell: bash
+        run: |
+          release_flags=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_flags+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --title "PixLog $GITHUB_REF_NAME" \
+            "${release_flags[@]}"
