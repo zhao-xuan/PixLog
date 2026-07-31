@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -187,6 +188,36 @@ func TestCompareAndGitDiffDriver(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "- hero.png") || !strings.Contains(stdout.String(), "-> (none)") {
 		t.Fatalf("deleted git-diff output:\n%s", stdout.String())
+	}
+}
+
+func TestComparePreviewInvokesChafaWithThreeImages(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("test helper uses a POSIX shell")
+	}
+	root := t.TempDir()
+	oldPath := filepath.Join(root, "old.png")
+	newPath := filepath.Join(root, "new.png")
+	writeGitCLIImage(t, oldPath, image.Point{X: -1, Y: -1})
+	writeGitCLIImage(t, newPath, image.Point{X: 3, Y: 3})
+
+	previewer := filepath.Join(root, "chafa")
+	script := "#!/bin/sh\nprintf 'CHAFA_ARGS=%s\\n' \"$*\"\n"
+	if err := os.WriteFile(previewer, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake chafa: %v", err)
+	}
+	t.Setenv("PIXLOG_CHAFA", previewer)
+	t.Setenv("PIXLOG_CHAFA_FORMAT", "symbols")
+
+	var stdout, stderr bytes.Buffer
+	exitCode := Run([]string{"compare", "--preview", "--threshold", "0", oldPath, newPath}, &stdout, &stderr)
+	if exitCode != 0 {
+		t.Fatalf("compare preview exit %d, stderr %s", exitCode, stderr.String())
+	}
+	for _, expected := range []string{"preview", "CHAFA_ARGS=", "--grid 3x1", "--format symbols", "before.png", "after.png", "heatmap.png"} {
+		if !strings.Contains(stdout.String(), expected) {
+			t.Fatalf("preview output missing %q:\n%s", expected, stdout.String())
+		}
 	}
 }
 

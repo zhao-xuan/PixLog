@@ -1,16 +1,30 @@
 <p align="center">
-   <img src="docs/assets/pixlog-logo.png" alt="PixLog logo" width="600">
+   <img src="docs/assets/pixlog-logo.png" alt="PixLog logo" width="420">
 </p>
 
 # PixLog
 
 **English** | [简体中文](README.zh-CN.md)
 
+**Visual diffs and generation provenance for images in Git.** Git tells you an
+image changed. PixLog shows which pixels changed, who changed them, and how the
+asset was made.
+
 <p align="center">
    <a href="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml"><img src="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"></a>
    <a href="https://github.com/zhao-xuan/PixLog/releases/latest"><img src="https://img.shields.io/github/v/release/zhao-xuan/PixLog?display_name=tag&sort=semver" alt="Latest release"></a>
    <img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go version">
 </p>
+
+<p align="center">
+   <img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog stages an image edit, reports visual metrics and changed regions, commits it, and identifies the responsible commit with visual blame." width="100%">
+</p>
+
+```bash
+brew install zhao-xuan/tap/pixlog
+pixlog init
+pixlog diff --staged
+```
 
 PixLog is a Git-compatible media and provenance layer for image assets. Git owns
 the index, commits, branches, merges, and remotes. PixLog adds:
@@ -25,18 +39,20 @@ There is no second PixLog commit graph or staging area.
 
 ## Build
 
-PixLog requires Go 1.24 and Git.
+PixLog requires Go 1.24 and Git. Chafa is the runtime dependency for inline
+terminal image previews.
 
 Install with Homebrew:
 
 ```bash
-brew install zhao-xuan/tap/pixlog
+brew install zhao-xuan/tap/pixlog chafa
 ```
 
 Download a prebuilt archive for Linux, macOS, or Windows from the
 [latest release](https://github.com/zhao-xuan/PixLog/releases/latest). Each
 archive contains both `pixlog` and `git-pixlog`, with an adjacent SHA-256
-checksum file.
+checksum file. Direct-download archives also include
+`install-dependencies.sh` and `install-dependencies.ps1` for installing Chafa.
 
 To build from source:
 
@@ -108,6 +124,13 @@ pixlog diff --heatmap hero-heatmap.png -- assets/hero.png
 git diff -- assets/hero.png
 git difftool --tool=pixlog HEAD~1 HEAD -- assets/hero.png
 ```
+
+In an interactive terminal, `diff`, `compare`, Git external diff, and `inspect`
+render the source images and heatmap inline with Chafa. Use `--no-preview` to
+disable this, or `--preview` to require it. JSON and NDJSON output never include
+terminal graphics. Set `PIXLOG_PREVIEW_SIZE`, for example `40x18`, to change each
+preview canvas. Set `PIXLOG_CHAFA_FORMAT` to `symbols`, `sixels`, `kitty`, or
+`iterm` when automatic terminal detection is unsuitable.
 
 Supported raster decoding currently covers PNG, JPEG, and GIF. Other recognized
 formats still receive exact-byte identity, manifests, pointers, recipes, transfer,

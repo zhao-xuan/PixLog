@@ -14,8 +14,9 @@ import (
 var ErrUnsupportedVisualFormat = errors.New("image format does not have a built-in visual decoder")
 
 type DiffOptions struct {
-	Threshold    uint8
-	MaxDimension int
+	Threshold      uint8
+	MaxDimension   int
+	IncludePreview bool
 }
 
 type Dimensions struct {

@@ -1,0 +1,51 @@
+name: PixLog Visual Policy
+description: Check image format, provenance, visual change, SSIM, and protected regions in a Git range.
+author: Xuan Zhao
+
+branding:
+  icon: image
+  color: orange
+
+inputs:
+  version:
+    description: PixLog release tag to install.
+    required: false
+    default: v0.1.0
+  policy:
+    description: Path to the PixLog policy file.
+    required: false
+    default: .pixlog-policy.json
+  range:
+    description: Git range to check. Pull requests default to origin/<base>...HEAD.
+    required: false
+    default: ""
+  media-endpoint:
+    description: Optional PixLog file or HTTP Batch media endpoint.
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Install PixLog
+      shell: bash
+      env:
+        PIXLOG_VERSION: ${{ inputs.version }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/github-action/install.sh"
+
+    - name: Configure PixLog
+      shell: bash
+      env:
+        PIXLOG_MEDIA_ENDPOINT: ${{ inputs.media-endpoint }}
+      run: |
+        pixlog install
+        if [[ -n "$PIXLOG_MEDIA_ENDPOINT" ]]; then
+          git config pixlog.remote.origin.endpoint "$PIXLOG_MEDIA_ENDPOINT"
+        fi
+
+    - name: Check visual policy
+      shell: bash
+      env:
+        PIXLOG_POLICY: ${{ inputs.policy }}
+        PIXLOG_RANGE: ${{ inputs.range }}
+      run: bash "$GITHUB_ACTION_PATH/scripts/github-action/check.sh"

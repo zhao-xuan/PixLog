@@ -6,7 +6,7 @@ GOARCH ?= $(shell go env GOARCH)
 DIST_DIR ?= dist
 LDFLAGS ?= -X github.com/pixlog/pixlog/internal/cli.Version=$(VERSION)
 
-.PHONY: build package test vet check install clean
+.PHONY: build package test vet check install marketing-demo marketing-record clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(PIXLOG_BINARY) ./cmd/pixlog
@@ -25,6 +25,12 @@ check: test vet build
 
 install:
 	go install ./cmd/pixlog ./cmd/git-pixlog
+
+marketing-demo: build
+	bash scripts/marketing/export-demo.sh --force
+
+marketing-record: build
+	bash scripts/marketing/record-demos.sh
 
 clean:
 	rm -rf bin

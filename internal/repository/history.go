@@ -15,6 +15,7 @@ type Inspection struct {
 	Revision string           `json:"revision"`
 	Entry    Entry            `json:"entry"`
 	Manifest imaging.Manifest `json:"manifest"`
+	Preview  []byte           `json:"-"`
 }
 
 type LineageNode struct {
@@ -102,7 +103,11 @@ func (r *Repository) Inspect(revision, assetPath string) (Inspection, error) {
 	if err := json.Unmarshal(data, &manifest); err != nil {
 		return Inspection{}, fmt.Errorf("decode manifest: %w", err)
 	}
-	return Inspection{Revision: displayRevision(revision), Entry: entry, Manifest: manifest}, nil
+	preview, err := r.Load(entry.ContentOID)
+	if err != nil {
+		return Inspection{}, err
+	}
+	return Inspection{Revision: displayRevision(revision), Entry: entry, Manifest: manifest, Preview: preview}, nil
 }
 
 func (r *Repository) Lineage(assetPath string) ([]LineageNode, error) {

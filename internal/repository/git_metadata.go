@@ -287,7 +287,11 @@ func (g *GitRepository) Inspect(revision, assetPath string) (Inspection, error) 
 	if !exists {
 		return Inspection{}, fmt.Errorf("asset %s does not exist at %s", relativePath, displayRevision(revision))
 	}
-	return Inspection{Revision: displayRevision(revision), Entry: entry, Manifest: source.manifests[relativePath]}, nil
+	preview, exists := source.data[relativePath]
+	if !exists {
+		return Inspection{}, fmt.Errorf("asset data for %s is missing at %s", relativePath, displayRevision(revision))
+	}
+	return Inspection{Revision: displayRevision(revision), Entry: entry, Manifest: source.manifests[relativePath], Preview: preview}, nil
 }
 
 func (g *GitRepository) ApplyCommandCapture(modified, deleted []string, recipeData []byte) (string, error) {

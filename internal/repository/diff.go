@@ -27,6 +27,12 @@ type AssetDiff struct {
 	Metadata []FieldChange       `json:"metadata"`
 	Visual   *imaging.VisualDiff `json:"visual,omitempty"`
 	Note     string              `json:"note,omitempty"`
+	Preview  *AssetPreview       `json:"-"`
+}
+
+type AssetPreview struct {
+	Before []byte
+	After  []byte
 }
 
 type DiffReport struct {
@@ -165,14 +171,31 @@ func (r *Repository) diffSnapshots(oldSnapshot, newSnapshot snapshot, paths []st
 			New:      change.New,
 			Metadata: metadataChanges(change.Old, change.New, oldSnapshot.manifests[change.Path], newSnapshot.manifests[change.Path]),
 		}
-		if change.Old != nil && change.New != nil && change.Old.ContentOID != change.New.ContentOID {
-			oldData, err := r.snapshotData(oldSnapshot, change.Path, *change.Old)
+		var oldData, newData []byte
+		if options.IncludePreview && change.Old != nil {
+			oldData, err = r.snapshotData(oldSnapshot, change.Path, *change.Old)
 			if err != nil {
 				return DiffReport{}, err
 			}
-			newData, err := r.snapshotData(newSnapshot, change.Path, *change.New)
+		}
+		if options.IncludePreview && change.New != nil {
+			newData, err = r.snapshotData(newSnapshot, change.Path, *change.New)
 			if err != nil {
 				return DiffReport{}, err
+			}
+		}
+		if change.Old != nil && change.New != nil && change.Old.ContentOID != change.New.ContentOID {
+			if oldData == nil {
+				oldData, err = r.snapshotData(oldSnapshot, change.Path, *change.Old)
+				if err != nil {
+					return DiffReport{}, err
+				}
+			}
+			if newData == nil {
+				newData, err = r.snapshotData(newSnapshot, change.Path, *change.New)
+				if err != nil {
+					return DiffReport{}, err
+				}
 			}
 			visual, compareErr := imaging.CompareReaders(bytes.NewReader(oldData), bytes.NewReader(newData), options)
 			if compareErr != nil {
@@ -184,6 +207,9 @@ func (r *Repository) diffSnapshots(oldSnapshot, newSnapshot snapshot, paths []st
 			} else {
 				assetDiff.Visual = &visual
 			}
+		}
+		if options.IncludePreview {
+			assetDiff.Preview = &AssetPreview{Before: oldData, After: newData}
 		}
 		report.Assets = append(report.Assets, assetDiff)
 	}

@@ -77,7 +77,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	case "git":
 		err = runGitIntegration(args[1:], stdout, stderr)
 	case "git-diff":
-		err = runGitDiff(args[1:], stdout)
+		err = runGitDiff(args[1:], stdout, stderr)
 	case "git-merge-driver":
 		err = runGitMergeDriver(args[1:])
 	case "filter-process":
@@ -523,6 +523,8 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 	format := flags.String("format", "text", "output format: text, json, or ndjson")
 	heatmapPath := flags.String("heatmap", "", "write a PNG heatmap for a single changed asset")
 	threshold := flags.Int("threshold", 8, "per-channel change threshold from 0 to 255")
+	preview := flags.Bool("preview", false, "force inline before, after, and heatmap previews with Chafa")
+	noPreview := flags.Bool("no-preview", false, "disable automatic terminal image previews")
 	if err := flags.Parse(preSeparator); err != nil {
 		return err
 	}
@@ -534,6 +536,10 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 	}
 	if *format != "text" && *format != "json" && *format != "ndjson" {
 		return errors.New("format must be text, json, or ndjson")
+	}
+	previewer, showPreview, err := terminalPreviewer(stdout, *preview, *noPreview, *format != "text")
+	if err != nil {
+		return err
 	}
 
 	revisions := flags.Args()
@@ -560,7 +566,7 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	options := imaging.DiffOptions{Threshold: uint8(*threshold)}
+	options := imaging.DiffOptions{Threshold: uint8(*threshold), IncludePreview: showPreview}
 	var report repository.DiffReport
 	switch {
 	case len(revisions) == 2:
@@ -611,6 +617,9 @@ func runDiff(args []string, stdout, stderr io.Writer) error {
 		return nil
 	default:
 		printDiff(stdout, report)
+		if showPreview {
+			return renderDiffPreviews(previewer, stdout, stderr, report)
+		}
 		return nil
 	}
 }
@@ -619,6 +628,8 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("compare", stderr)
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
 	threshold := flags.Int("threshold", 8, "per-channel change threshold from 0 to 255")
+	preview := flags.Bool("preview", false, "force inline before, after, and heatmap previews with Chafa")
+	noPreview := flags.Bool("no-preview", false, "disable automatic terminal image previews")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
@@ -628,6 +639,10 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 	if *threshold < 0 || *threshold > 255 {
 		return errors.New("threshold must be between 0 and 255")
 	}
+	previewer, showPreview, err := terminalPreviewer(stdout, *preview, *noPreview, *asJSON)
+	if err != nil {
+		return err
+	}
 	visual, err := compareImageFiles(flags.Arg(0), flags.Arg(1), imaging.DiffOptions{Threshold: uint8(*threshold)})
 	if err != nil {
 		return err
@@ -635,7 +650,7 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 	if *asJSON {
 		return writeJSON(stdout, visual)
 	}
-	printDiff(stdout, repository.DiffReport{
+	report := repository.DiffReport{
 		From: flags.Arg(0),
 		To:   flags.Arg(1),
 		Assets: []repository.AssetDiff{{
@@ -643,7 +658,22 @@ func runCompare(args []string, stdout, stderr io.Writer) error {
 			Kind:   repository.ChangeModified,
 			Visual: &visual,
 		}},
-	})
+	}
+	if showPreview {
+		before, err := readImageFile(flags.Arg(0))
+		if err != nil {
+			return err
+		}
+		after, err := readImageFile(flags.Arg(1))
+		if err != nil {
+			return err
+		}
+		report.Assets[0].Preview = &repository.AssetPreview{Before: before, After: after}
+	}
+	printDiff(stdout, report)
+	if showPreview {
+		return renderDiffPreviews(previewer, stdout, stderr, report)
+	}
 	return nil
 }
 
@@ -679,7 +709,7 @@ func runHydration(action string, args []string, stdout, stderr io.Writer) error 
 	return nil
 }
 
-func runGitDiff(args []string, stdout io.Writer) error {
+func runGitDiff(args []string, stdout, stderr io.Writer) error {
 	if len(args) != 7 {
 		return errors.New("git-diff must be invoked by Git's external diff protocol")
 	}
@@ -711,11 +741,35 @@ func runGitDiff(args []string, stdout io.Writer) error {
 	if asset.Kind == repository.ChangeDeleted {
 		to = "(none)"
 	}
-	printDiff(stdout, repository.DiffReport{
+	report := repository.DiffReport{
 		From:   from,
 		To:     to,
 		Assets: []repository.AssetDiff{asset},
-	})
+	}
+	previewer, showPreview, err := terminalPreviewer(stdout, false, false, false)
+	if err != nil {
+		return err
+	}
+	if showPreview {
+		preview := &repository.AssetPreview{}
+		if args[1] != "/dev/null" {
+			preview.Before, err = readImageFile(args[1])
+			if err != nil {
+				return err
+			}
+		}
+		if args[4] != "/dev/null" {
+			preview.After, err = readImageFile(args[4])
+			if err != nil {
+				return err
+			}
+		}
+		report.Assets[0].Preview = preview
+	}
+	printDiff(stdout, report)
+	if showPreview {
+		return renderDiffPreviews(previewer, stdout, stderr, report)
+	}
 	return nil
 }
 
@@ -756,35 +810,34 @@ func runHook(args []string, stdout, stderr io.Writer) error {
 }
 
 func compareImageFiles(oldPath, newPath string, options imaging.DiffOptions) (imaging.VisualDiff, error) {
-	oldData, err := os.ReadFile(oldPath)
+	oldData, err := readImageFile(oldPath)
 	if err != nil {
-		return imaging.VisualDiff{}, fmt.Errorf("open old image %s: %w", oldPath, err)
+		return imaging.VisualDiff{}, err
 	}
-	newData, err := os.ReadFile(newPath)
+	newData, err := readImageFile(newPath)
 	if err != nil {
-		return imaging.VisualDiff{}, fmt.Errorf("open new image %s: %w", newPath, err)
-	}
-	if _, found, _ := repository.ParsePixLogPointer(oldData); found {
-		repo, err := repository.OpenGit("")
-		if err != nil {
-			return imaging.VisualDiff{}, err
-		}
-		oldData, _, err = repo.SmudgeFilter(oldData)
-		if err != nil {
-			return imaging.VisualDiff{}, err
-		}
-	}
-	if _, found, _ := repository.ParsePixLogPointer(newData); found {
-		repo, err := repository.OpenGit("")
-		if err != nil {
-			return imaging.VisualDiff{}, err
-		}
-		newData, _, err = repo.SmudgeFilter(newData)
-		if err != nil {
-			return imaging.VisualDiff{}, err
-		}
+		return imaging.VisualDiff{}, err
 	}
 	return imaging.CompareReaders(bytes.NewReader(oldData), bytes.NewReader(newData), options)
+}
+
+func readImageFile(path string) ([]byte, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("open image %s: %w", path, err)
+	}
+	if _, found, _ := repository.ParsePixLogPointer(data); !found {
+		return data, nil
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return nil, err
+	}
+	data, _, err = repo.SmudgeFilter(data)
+	if err != nil {
+		return nil, err
+	}
+	return data, nil
 }
 
 func isNullGitOID(oid string) bool {
@@ -1179,11 +1232,17 @@ func runInspect(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("inspect", stderr)
 	revision := flags.String("revision", "", "inspect a commit instead of the index")
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
+	preview := flags.Bool("preview", false, "force an inline image preview with Chafa")
+	noPreview := flags.Bool("no-preview", false, "disable automatic terminal image preview")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("usage: pixlog inspect [--revision <rev>] [--json] <asset>")
+		return errors.New("usage: pixlog inspect [--revision <rev>] [--json] [--preview | --no-preview] <asset>")
+	}
+	previewer, showPreview, err := terminalPreviewer(stdout, *preview, *noPreview, *asJSON)
+	if err != nil {
+		return err
 	}
 	repo, err := openInspectionRepository()
 	if err != nil {
@@ -1214,6 +1273,12 @@ func runInspect(args []string, stdout, stderr io.Writer) error {
 		for _, key := range keys {
 			fmt.Fprintf(stdout, "    %s: %s\n", key, inspection.Manifest.EmbeddedMetadata[key])
 		}
+	}
+	if showPreview {
+		return renderDiffPreviews(previewer, stdout, stderr, repository.DiffReport{Assets: []repository.AssetDiff{{
+			Path:    inspection.Entry.Path,
+			Preview: &repository.AssetPreview{After: inspection.Preview},
+		}}})
 	}
 	return nil
 }

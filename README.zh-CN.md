@@ -1,12 +1,29 @@
+<p align="center">
+	<img src="docs/assets/pixlog-logo.png" alt="PixLog 标志" width="420">
+</p>
+
 # PixLog
 
 [English](README.md) | **简体中文**
+
+**面向 Git 图片资产的视觉差异与生成溯源。** Git 告诉你图片变了；PixLog 告诉你
+哪些像素变了、由谁修改，以及这张图片是如何生成的。
 
 <p align="center">
 	<a href="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml"><img src="https://github.com/zhao-xuan/PixLog/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI 状态"></a>
 	<a href="https://github.com/zhao-xuan/PixLog/releases/latest"><img src="https://img.shields.io/github/v/release/zhao-xuan/PixLog?display_name=tag&sort=semver" alt="最新版本"></a>
 	<img src="https://img.shields.io/github/go-mod/go-version/zhao-xuan/PixLog" alt="Go 版本">
 </p>
+
+<p align="center">
+   <img src="docs/assets/demos/pixlog-visual-history.gif" alt="PixLog 暂存图片修改，显示视觉指标和变化区域，提交修改，并通过视觉 blame 找到对应提交。" width="100%">
+</p>
+
+```bash
+brew install zhao-xuan/tap/pixlog
+pixlog init
+pixlog diff --staged
+```
 
 PixLog 是面向图像资产的 Git 兼容媒体与溯源层。Git 负责索引、提交、分支、合并
 和远程仓库；PixLog 增加：
@@ -20,17 +37,18 @@ Git 提交小型 PixLog pointer，工作树中仍是原始图像字节。PixLog 
 
 ## 构建
 
-PixLog 需要 Go 1.24 和 Git。
+PixLog 需要 Go 1.24 和 Git。终端内联图片预览还需要 Chafa 运行时依赖。
 
 使用 Homebrew 安装：
 
 ```bash
-brew install zhao-xuan/tap/pixlog
+brew install zhao-xuan/tap/pixlog chafa
 ```
 
 可以从[最新版本](https://github.com/zhao-xuan/PixLog/releases/latest)下载 Linux、
 macOS 或 Windows 预编译包。每个压缩包都包含 `pixlog` 和 `git-pixlog`，并提供相邻
-的 SHA-256 校验文件。
+的 SHA-256 校验文件。直接下载的压缩包还包含 `install-dependencies.sh` 和
+`install-dependencies.ps1`，用于安装 Chafa。
 
 从源码构建：
 
@@ -99,6 +117,12 @@ pixlog diff --heatmap hero-heatmap.png -- assets/hero.png
 git diff -- assets/hero.png
 git difftool --tool=pixlog HEAD~1 HEAD -- assets/hero.png
 ```
+
+在交互式终端中，`diff`、`compare`、Git external diff 和 `inspect` 会通过 Chafa
+内联显示源图与热力图。使用 `--no-preview` 关闭，或用 `--preview` 强制要求预览。
+JSON 和 NDJSON 输出绝不会混入终端图形。可通过 `PIXLOG_PREVIEW_SIZE`（例如
+`40x18`）调整每张预览图的画布大小。自动终端检测不适用时，可将
+`PIXLOG_CHAFA_FORMAT` 设为 `symbols`、`sixels`、`kitty` 或 `iterm`。
 
 内置光栅解码目前支持 PNG、JPEG 和 GIF。其他可识别格式仍具有精确字节标识、
 manifest、pointer、配方、传输和锁能力，但可能无法进行视觉比较。
