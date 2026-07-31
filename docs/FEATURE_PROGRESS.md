@@ -13,7 +13,7 @@ Status meanings:
 | Phase 1: Git-compatible core | **Done** | Git add/commit/checkout use one index and pointer-backed media |
 | Phase 2: Remote | **Partial** | File and HTTP Batch work; cloud/provider adapters do not |
 | Phase 3: Visual experience | **Partial** | CLI, diff driver, difftool, and safe PNG merge work; Web UI and semantic diff do not |
-| Phase 4: AI provenance | **Partial** | Journal, capture, recipes, reproduce guard, and lineage work; API/provider integration does not |
+| Phase 4: AI provenance | **Partial** | Shared capture protocol, adapters, metadata/C2PA, graph, and guarded replay work; adapter host packaging and deterministic provider execution do not |
 | Phase 5: Collaboration | **Partial** | File locks, verification, safe merge, and blame work; hosted collaboration does not |
 
 ## Phase 1: Git-Compatible Core
@@ -45,6 +45,7 @@ CLI proxy tests, clone tests, and the full repository test suite.
 | Feature | Status | Evidence / limitation |
 | --- | --- | --- |
 | Pre-push media ordering | Done | Referenced blob/manifest/recipe objects upload before Git refs |
+| Transitive recipe transfer | Done | Inputs, outputs, masks, models, workflows, vendor payloads, and nested recipes upload recursively |
 | Existing hook preservation | Done | A prior pre-push hook is retained and executed by the dispatcher |
 | Local path and `file://` endpoint | Done | Upload, fetch, verification, dehydrate, and rehydrate round trip tested |
 | HTTP Batch client | Done | Basic upload/download actions, headers, and verify action tested |
@@ -69,13 +70,14 @@ CLI proxy tests, clone tests, and the full repository test suite.
 | Direct file comparison | Done | `pixlog compare OLD NEW` works without snapshot selection |
 | File and manifest diff | Done | Exact content, format, dimensions, size, visual hash, and recipe IDs |
 | Raster pixel diff | Partial | Built-in decode supports PNG, JPEG, and GIF |
-| PNG metadata diff | Partial | `tEXt` and uncompressed `iTXt`; no complete EXIF/IPTC/XMP/ICC parser |
+| Embedded metadata inspection | Partial | PNG/JPEG EXIF, XMP, ICC, IPTC, and C2PA signals are extracted; coverage is intentionally selective rather than a complete metadata-editor implementation |
 | Metrics and changed regions | Done | Change ratio, mean delta, RMSE, global SSIM, and connected regions |
 | Heatmap export | Done | `pixlog diff --heatmap` writes a PNG for one changed asset |
 | Conservative visual merge | Partial | Same-size, non-conflicting PNG pixels merge; other cases stay conflicted |
 | Geometric registration | Planned | Crop, translation, rotation, flip, and perspective are not aligned |
 | Local Web UI | Planned | No swipe/onion-skin/review UI is shipped |
 | AI semantic change summary | Planned | No inferred natural-language summary is emitted |
+| Before/after operation inference | Done | `recipe infer` emits geometry/pixel/region evidence and confidence, always marked `inferred` |
 
 ## Phase 4: AI Provenance
 
@@ -84,18 +86,27 @@ CLI proxy tests, clone tests, and the full repository test suite.
 | Feature | Status | Evidence / limitation |
 | --- | --- | --- |
 | Canonical recipe object and OID | Done | Normalized `pixlog.recipe/v1` JSON is stored in CAS |
-| SQLite generation journal | Done | Content OID to recipe OID association is tested |
+| SQLite provenance journal | Done | Associations plus capture sessions, ordered events, jobs, checkpoints, and artifacts are tested |
 | Ordinary `git add` recipe attachment | Done | Clean filter queries the journal and embeds the recipe OID in the pointer |
 | ComfyUI PNG adapter | Done | Captures embedded workflow and prompt graph |
 | AUTOMATIC1111 PNG adapter | Done | Captures embedded parameters text |
 | `pixlog run -- command` | Done | Successful output/deletion delta is staged with Git source context |
-| Manual recipe import/show/diff | Done | Import records journal association; historical field diff is supported |
-| Guarded reproduction | Partial | Captured commands require matching clean HEAD/index; provider executors are absent |
-| Git lineage | Partial | Path history follows renames; reference/mask/model DAG traversal is absent |
-| Strict published JSON Schema | Partial | Top-level schema/kind are checked; nested provider fields remain extensible |
-| AI API proxy and SDK | Planned | No request interception or provider SDK is shipped |
-| Reference/mask/model resolution | Planned | Recipes may describe dependencies but do not hydrate and verify all of them |
-| C2PA import/export/signature verification | Planned | Repository provenance is not signed |
+| Manual recipe import/show/diff/infer | Done | Historical field diff and explicitly low-trust before/after inference are supported |
+| Shared capture daemon | Done | Loopback `pixlog.capture/v1`, token-aware browser CORS, health, sessions, events, jobs, checkpoints, and artifacts are tested |
+| Capture finalization | Done | A session becomes a canonical recipe associated with exact output bytes |
+| Photoshop UXP adapter source | Partial | Allow-listed Action Descriptor capture and panel are implemented; release packaging and validation in a supported Photoshop host remain |
+| Photoshop History Log fallback | Done | Scrubbed logs import as `application-history` / `provenance-only` recipes |
+| Browser MV3 adapter source | Partial | User-triggered `ui-observed` capture is implemented; store packaging and per-site host validation remain |
+| Explicit provider/API proxy | Done | ComfyUI, AUTOMATIC1111, OpenAI, Firefly, and generic explicit origins can be captured without TLS MITM |
+| Provider image artifact harvesting | Partial | Direct image responses plus A1111 `images[]` and OpenAI `b64_json` enter CAS; provider-specific asynchronous polling/download remains |
+| Credential and payload scrubbing | Done | Headers, recursive JSON/form fields, multipart values, signed URLs, and history text are scrubbed; unknown unstructured payloads become digest-only records |
+| Guarded command reproduction | Done | Captured commands require unredacted arguments and matching clean HEAD/index |
+| Guarded provider request replay | Done | Only `exact-request` plans run; caller supplies a new base URL and environment-owned bearer token; redacted bodies are rejected |
+| Git and object lineage graph | Done | Rename-aware commits plus recursively verified/hydratable recipe inputs, outputs, models, masks, workflows, vendor objects, and nested recipes |
+| Recipe trust contract | Done | Fidelity and reproducibility enums are separately validated while provider fields remain extensible |
+| Metadata import | Done | Supported PNG/JPEG EXIF, XMP, ICC, IPTC, C2PA, ComfyUI, and A1111 records can become recipes |
+| C2PA import/export/verify/sign | Done | Public recipe actions map to manifests; verification/signing delegate to official external `c2patool` |
+| Deterministic provider output reproduction | Planned | Request replay cannot freeze a vendor's hidden model/runtime or guarantee identical output |
 
 ## Phase 5: Collaboration
 
@@ -143,11 +154,18 @@ The current tree was validated in an isolated Git configuration:
 GIT_CONFIG_GLOBAL=/dev/null GOTELEMETRY=off go test ./... -count=1
   cmd/git-pixlog       NO TEST FILES
   cmd/pixlog           NO TEST FILES
+  internal/c2pa        PASS
+  internal/capture     PASS
   internal/cli         PASS
   internal/imaging     PASS
-  internal/recipe      NO TEST FILES
+  internal/recipe      PASS
   internal/repository  PASS
 ```
+
+The same tree passed `go vet ./...`, trimpath builds of both command packages,
+`node --check` for all four adapter JavaScript files, JSON parsing for both adapter
+manifests, `git diff --check`, and VS Code diagnostics. Before release, rerun these
+checks after every cross-cutting capture/schema change.
 
 Focused executable coverage includes:
 
@@ -159,12 +177,16 @@ Focused executable coverage includes:
 - Non-overlap merge and overlap conflict.
 - Rename-aware lineage and visual blame.
 - Reproduction source-state guards.
+- Provider replay endpoint/auth isolation and capture audit records.
+- Capture daemon/proxy/finalization and recursive secret scrubbing.
+- Metadata extraction, external C2PA integration, and inferred recipes.
+- Recursive provenance verification/hydration and transitive pre-push transfer.
 - Git command exit codes and porcelain output.
 
 ## Next Development Order
 
-1. Add direct S3/Azure adapters or ship a first-party HTTP Batch service.
-2. Add delayed and selective hydration for large repositories.
-3. Build the local visual review UI and richer image registration.
-4. Add provider API capture/execution and reference-asset lineage.
+1. Validate and package the Photoshop UXP and Chromium adapters in supported host versions.
+2. Add provider-specific asynchronous polling/download and richer artifact mapping.
+3. Add direct S3/Azure adapters or ship a first-party HTTP Batch service.
+4. Add delayed/selective hydration and a local visual review UI.
 5. Add HTTP locks, server validation, and hosted review/Checks integration.

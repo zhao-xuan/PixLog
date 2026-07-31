@@ -2,7 +2,11 @@ package capture
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -89,5 +93,64 @@ func TestProxyForwardsOriginalAndCapturesRedactedPayloads(t *testing.T) {
 	}
 	if bytes.Contains(responsePayload, []byte("response-secret")) {
 		t.Fatalf("captured response = %s", responsePayload)
+	}
+}
+
+func TestProxyRecordsA1111Base64ImageAsOutputArtifact(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git is not installed")
+	}
+	var imageBuffer bytes.Buffer
+	output := image.NewNRGBA(image.Rect(0, 0, 1, 1))
+	output.SetNRGBA(0, 0, color.NRGBA{R: 18, G: 52, B: 86, A: 255})
+	if err := png.Encode(&imageBuffer, output); err != nil {
+		t.Fatalf("encode output: %v", err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		writer.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(writer).Encode(map[string]any{
+			"images": []string{base64.StdEncoding.EncodeToString(imageBuffer.Bytes())},
+		})
+	}))
+	defer upstream.Close()
+
+	root := t.TempDir()
+	runCaptureGit(t, root, "init", "--quiet")
+	proxy, err := NewProxy(root, ProxyOptions{Platform: "automatic1111", Upstream: upstream.URL})
+	if err != nil {
+		t.Fatalf("NewProxy: %v", err)
+	}
+	defer proxy.Close()
+	proxyServer := httptest.NewServer(proxy.Handler())
+	defer proxyServer.Close()
+	response, err := http.Post(proxyServer.URL+"/sdapi/v1/txt2img", "application/json", strings.NewReader(`{"prompt":"studio"}`))
+	if err != nil {
+		t.Fatalf("Post: %v", err)
+	}
+	_, _ = io.Copy(io.Discard, response.Body)
+	response.Body.Close()
+
+	journal, err := repository.OpenProvenanceJournal(root)
+	if err != nil {
+		t.Fatalf("OpenProvenanceJournal: %v", err)
+	}
+	defer journal.Close()
+	artifacts, err := journal.CaptureArtifacts(proxy.SessionID())
+	if err != nil {
+		t.Fatalf("CaptureArtifacts: %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].Role != "output" {
+		t.Fatalf("artifacts = %#v", artifacts)
+	}
+	store, err := repository.OpenGitMediaStore(root)
+	if err != nil {
+		t.Fatalf("OpenGitMediaStore: %v", err)
+	}
+	stored, err := store.Get(artifacts[0].ContentOID)
+	if err != nil {
+		t.Fatalf("Get artifact: %v", err)
+	}
+	if !bytes.Equal(stored, imageBuffer.Bytes()) {
+		t.Fatal("stored output artifact differs from provider image")
 	}
 }

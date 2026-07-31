@@ -1,22 +1,211 @@
-核心原则是：
+# Platform Capture And Integration
 
-不要试图从最终图片反推 recipe，而应在操作发生时捕获。
+本页前半部分描述当前二进制和仓库中已经存在的接入面；后半部分保留设计背景，不能
+当作已交付功能清单。最新完成度以 [FEATURE_PROGRESS.md](FEATURE_PROGRESS.md) 为准。
 
-Pixlog 可以建立四级捕获体系：
+核心原则不变：优先在操作发生时捕获；只有没有原生事件、API、workflow 或 metadata
+时，才根据最终图片推断。PixLog 不做透明 TLS MITM，也不把捕获完整度等同于可复现性。
 
-Level A  Native capture       插件/API/工作流级，参数最完整
-Level B  Embedded metadata    从 PNG、EXIF、XMP、C2PA 导入
-Level C  Application history  Photoshop History、操作事件
-Level D  Visual inference     根据 before/after 推断，明确标为 AI inferred
+## Current Adapter Matrix
 
-并给每条 recipe 标记可信度：
+| 平台 | 当前入口 | Fidelity | Reproducibility | 状态与边界 |
+| --- | --- | --- | --- | --- |
+| Photoshop | `adapters/photoshop` UXP + `capture serve` | `exact-command` | `best-effort` | allow-list 事件、raw descriptor、checkpoint 已实现；需在目标 Photoshop 版本中加载验证与发布打包 |
+| Photoshop fallback | `capture history` | `application-history` | `provenance-only` | 导入详细 History Log，无法恢复完整参数、mask 或 layer state |
+| ComfyUI | `capture proxy --platform comfyui` | `exact-request` | `best-effort` | request/response 与 prompt job ID 已记录；经代理返回的 `image/*` 自动成为 artifact，尚未主动轮询所有异步输出 |
+| AUTOMATIC1111 / Forge | `capture proxy --platform automatic1111` | `exact-request` | `best-effort` | txt2img/img2img 请求与 `images[]` base64 输出捕获；PNG metadata 仍是 fallback |
+| OpenAI image API | `capture proxy --platform openai` | `exact-request` | `request-reproducible` | request/response 与 `b64_json` 输出捕获；provider 后台模型不可冻结 |
+| Firefly | `capture proxy --platform firefly` | `exact-request` | `request-reproducible` | 异步 job envelope 捕获；多 header 认证请求目前只能捕获，Bearer-only endpoint 才能直接重放 |
+| 封闭 Web 工具 | `adapters/browser` MV3 + `capture serve` | `ui-observed` | `provenance-only` | 仅用户主动点击时采集；需按站点验证 selector 与条款，不监听私有网络流量 |
+| 文件 metadata | `metadata inspect/import` | `embedded-metadata` | `best-effort` 或 `provenance-only` | 支持已实现的 PNG/JPEG EXIF、XMP、ICC、IPTC、C2PA、ComfyUI、A1111 字段 |
+| Before/after | `recipe infer` | `inferred` | `inferred` | 本地几何/像素/区域启发式与 confidence；不声称识别出真实操作参数 |
 
-exact-replayable
-best-effort-replayable
-provenance-only
-inferred
+运行 `pixlog capture guide` 可列出平台，运行
+`pixlog capture guide <platform>` 可得到与当前版本一致的 CLI 步骤和验证命令。
 
-⸻
+## Shared Capture Workflow
+
+原生 Photoshop 与浏览器 adapter 使用 token-protected loopback daemon：
+
+```bash
+export PIXLOG_CAPTURE_TOKEN="$(pixlog capture token)"
+pixlog capture serve
+pixlog capture status
+```
+
+daemon 只允许 loopback bind。配置 token 后，浏览器 origin 必须携带
+`X-PixLog-Token`；未配置 token 时浏览器 CORS 被拒绝。adapter 写入 session、ordered
+events、jobs、checkpoints 和 artifacts，不会直接创建 Git commit。
+
+API 工具使用显式代理。例如 AUTOMATIC1111：
+
+```bash
+pixlog capture proxy \
+  --platform automatic1111 \
+  --upstream http://127.0.0.1:7860 \
+  --listen 127.0.0.1:7861
+```
+
+用户必须主动把 API client 的 base URL 改到 PixLog 端口。代理把请求原样转发到
+显式 upstream，但只保存脱敏后的 payload；Authorization/cookie 不进入 recipe 或
+CAS，JSON/form/multipart 的敏感字段和 signed URL query 也会被清除。
+
+生成或编辑完成后停止 adapter/proxy，再把 session 与精确输出绑定：
+
+```bash
+pixlog capture sessions
+pixlog capture show <session-id>
+pixlog capture finalize <session-id> assets/output.png
+pixlog recipe show assets/output.png
+```
+
+`finalize` 将 events、jobs、checkpoints、inputs、outputs 和 raw payload OID 规范化为
+`pixlog.recipe/v1`，写入 CAS，记录 content-to-recipe association，并通过 Git filter
+重新暂存该资产。
+
+## Platform Commands
+
+### Photoshop UXP
+
+```bash
+pixlog capture guide photoshop
+export PIXLOG_CAPTURE_TOKEN="$(pixlog capture token)"
+pixlog capture serve
+```
+
+在 Photoshop UXP Developer Tool 中加载 `adapters/photoshop`，在面板中设置 daemon
+URL 与同一个 token。插件只发送 allow-list Action Descriptor 和轻量状态，不在 UI
+thread 中 hash、diff 或上传大文件。保存文档后运行 `capture sessions/show/finalize`。
+
+无法加载 UXP 时，在 Photoshop 中启用详细 History Log，并导入：
+
+```bash
+pixlog capture history photoshop-history.txt assets/output.psd
+```
+
+日志进入 CAS 前会清除常见 token/API key/password；recipe 明确标记
+`application-history` 和 `provenance-only`。
+
+### ComfyUI
+
+```bash
+pixlog capture proxy --platform comfyui \
+  --upstream http://127.0.0.1:8188 --listen 127.0.0.1:8189
+```
+
+把 ComfyUI client 指向 `127.0.0.1:8189`。`POST /prompt` 和 `/history` envelope 会
+进入同一 session，`prompt_id` 进入 job 表；经代理读取的 `image/*` 响应自动登记为
+output artifact。完成后仍应将下载到仓库的实际输出文件传给 `capture finalize`。模型
+路径、custom node commit 和运行时差异仍需调用方维护；相同 workflow/seed 不代表
+跨 GPU/runtime 的 bit-exact 输出。
+
+### AUTOMATIC1111 / Forge
+
+```bash
+pixlog capture proxy --platform automatic1111 \
+  --upstream http://127.0.0.1:7860 --listen 127.0.0.1:7861
+```
+
+API client 改用端口 7861。代理区分 txt2img/img2img，并保留 extension-owned JSON
+字段；合法 `images[]` base64 图片会解码、MIME 校验并成为 output artifact。旧 PNG
+可继续用 `pixlog metadata import <asset>` 导入 infotext fallback。
+
+### OpenAI / Firefly / Generic HTTP API
+
+```bash
+pixlog capture proxy --platform openai \
+  --upstream https://api.openai.com --listen 127.0.0.1:4780
+
+pixlog capture proxy --platform firefly \
+  --upstream https://firefly-api.adobe.io --listen 127.0.0.1:4781
+
+pixlog capture proxy --platform generic \
+  --upstream https://provider.example --listen 127.0.0.1:4782
+```
+
+API key 继续由原 SDK/环境持有；代理转发 header 但不存储。finalize 后先查看重放计划：
+
+```bash
+pixlog reproduce --revision HEAD assets/output.png
+```
+
+只有 `exact-request`、相对 path、`POST`/`PUT`/`PATCH` 且 payload 不含
+`[REDACTED]` 时才能执行。目标 origin 必须重新显式提供，recipe 中捕获的 host 永远
+不会执行；当前认证注入是可选 Bearer token，只能来自用户指定的环境变量：
+
+```bash
+pixlog reproduce --revision HEAD --execute \
+  --base-url https://provider.example \
+  --auth-env PROVIDER_API_TOKEN \
+  --response-output response.json \
+  assets/output.png
+```
+
+响应会被 size-limit、脱敏并写入新的 audit session；非 2xx 也留下记录后返回失败。
+这叫 request reproduction，不承诺 provider 返回同一像素。
+
+### Closed Web Tools
+
+```bash
+pixlog capture guide browser
+export PIXLOG_CAPTURE_TOKEN="$(pixlog capture token)"
+pixlog capture serve
+```
+
+在 Chromium 中以 unpacked extension 加载 `adapters/browser`，配置 daemon 与 token。
+只有用户点击扩展 action 时才采集当前页面可观察字段；输出必须由用户下载并在
+`capture finalize` 时指定。adapter 固定标记 `ui-observed` / `provenance-only`。
+
+### Metadata, C2PA, And Inference
+
+```bash
+pixlog metadata inspect assets/output.jpg
+pixlog metadata import assets/output.jpg
+
+pixlog c2pa verify assets/output.jpg
+pixlog c2pa import assets/output.jpg
+pixlog c2pa export --output manifest.json assets/output.jpg
+pixlog c2pa sign --output signed.jpg --manifest manifest.json assets/output.jpg
+
+pixlog recipe infer before.png after.png
+```
+
+C2PA 密码学和 trust store 由官方外部 `c2patool` 负责。PixLog 当前导出公开 action，
+有 parent 时增加 `c2pa.opened`；标准 ingredient assertion 仍是后续工作。私有 prompt
+或完整 vendor payload 不写入 C2PA。视觉推断只输出证据、候选 operation 与
+confidence，永远不可执行。
+
+## Portability And Verification
+
+```bash
+pixlog lineage --graph --verify assets/output.png
+pixlog lineage --graph --hydrate --verify assets/output.png
+```
+
+graph 递归覆盖 input/output、mask、model、workflow、vendor raw payload 和 nested
+recipe。pre-push 使用同一个引用闭包，在 Git ref 更新前上传所有对象；`--hydrate`
+从 origin media endpoint 补齐缺失对象并逐个校验 SHA-256。
+
+## Remaining Boundaries
+
+- Photoshop UXP 与 Chromium MV3 源码已通过静态语法/manifest 检查，但仍需要在目标
+  host 版本中做安装、权限、事件和真实下载流程验收。
+- ComfyUI/Firefly 等异步 provider 的通用 job ID 已记录，直接图片和已知 base64 字段
+  已 harvest；provider-specific polling、output URL 下载和 cost/usage 归一化仍需继续实现。
+- PixLog 不知道 provider 隐藏的 model revision、prompt rewrite、safety pipeline 或
+  nondeterministic runtime，因此不会提升 request recipe 的可信度标签。
+- 当前不包含透明 TLS interception、移动端捕获、hosted capture service 或浏览器商店
+  发布包。
+
+## Design Background
+
+以下内容是原始平台设计依据与更深的目标形态。出现“建议”“可以”“应提供”时表示
+设计方向，不代表当前二进制已经实现。
+
+捕获层级从高到低为 Native/API、Embedded metadata、Application history、Visual
+inference；每条 recipe 必须同时记录 capture fidelity 和 reproducibility status。
+
+---
 
 一、Photoshop：开发一个 Pixlog UXP 插件
 

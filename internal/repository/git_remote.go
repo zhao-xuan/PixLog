@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/pixlog/pixlog/internal/recipe"
 )
 
 type GitRefUpdate struct {
@@ -106,6 +108,38 @@ func (g *GitRepository) ReferencedMediaObjects(updates []GitRefUpdate) ([]string
 			if pointer.RecipeOID != "" {
 				objectSet[pointer.RecipeOID] = struct{}{}
 			}
+		}
+	}
+	store, err := OpenGitMediaStore(g.Root)
+	if err != nil {
+		return nil, err
+	}
+	queue := make([]string, 0, len(objectSet))
+	for oid := range objectSet {
+		queue = append(queue, oid)
+	}
+	processed := map[string]bool{}
+	for len(queue) > 0 {
+		oid := queue[0]
+		queue = queue[1:]
+		if processed[oid] {
+			continue
+		}
+		processed[oid] = true
+		data, loadErr := store.Get(oid)
+		if loadErr != nil {
+			continue
+		}
+		references, referenceErr := recipe.References(data)
+		if referenceErr != nil {
+			continue
+		}
+		for _, reference := range references {
+			if _, exists := objectSet[reference.OID]; exists || !store.Has(reference.OID) {
+				continue
+			}
+			objectSet[reference.OID] = struct{}{}
+			queue = append(queue, reference.OID)
 		}
 	}
 	objects := make([]string, 0, len(objectSet))

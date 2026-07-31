@@ -178,7 +178,7 @@ func runC2PAVerify(args []string, stdout, stderr io.Writer) error {
 	}
 	result, err := (c2paintegration.Tool{Executable: *toolPath}).Verify(flags.Arg(0))
 	if err != nil {
-		return err
+		return c2paToolMissingHint(err)
 	}
 	if *asJSON {
 		var document any
@@ -204,7 +204,7 @@ func runC2PAImport(args []string, stdout, stderr io.Writer) error {
 	assetPath := flags.Arg(0)
 	verification, err := (c2paintegration.Tool{Executable: *toolPath}).Verify(assetPath)
 	if err != nil {
-		return err
+		return c2paToolMissingHint(err)
 	}
 	repo, err := repository.OpenGit("")
 	if err != nil {
@@ -334,7 +334,7 @@ func runC2PASign(args []string, stdout, stderr io.Writer) error {
 		*manifestPath = generatedManifest
 	}
 	if err := (c2paintegration.Tool{Executable: *toolPath}).Sign(assetPath, *manifestPath, *outputPath, flags.Args()[1:]); err != nil {
-		return err
+		return c2paToolMissingHint(err)
 	}
 	fmt.Fprintf(stdout, "Wrote signed asset to %s\n", *outputPath)
 	return nil

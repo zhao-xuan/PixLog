@@ -23,7 +23,7 @@ import (
 
 func runCapture(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: pixlog capture <serve|status|token|guide|proxy|sessions|show|finalize> [options]")
+		return errors.New("usage: pixlog capture <serve|status|token|guide|proxy|history|sessions|show|finalize> [options]")
 	}
 	switch args[0] {
 	case "serve":
@@ -36,6 +36,8 @@ func runCapture(args []string, stdout, stderr io.Writer) error {
 		return runCaptureGuide(args[1:], stdout, stderr)
 	case "proxy":
 		return runCaptureProxy(args[1:], stdout, stderr)
+	case "history":
+		return runCaptureHistory(args[1:], stdout, stderr)
 	case "sessions":
 		return runCaptureSessions(args[1:], stdout, stderr)
 	case "show":
@@ -45,6 +47,72 @@ func runCapture(args []string, stdout, stderr io.Writer) error {
 	default:
 		return fmt.Errorf("unknown capture command %q", args[0])
 	}
+}
+
+func runCaptureHistory(args []string, stdout, stderr io.Writer) error {
+	flags := newFlagSet("capture history", stderr)
+	platform := flags.String("platform", "photoshop", "application that produced the history log")
+	asJSON := flags.Bool("json", false, "emit machine-readable result")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 2 {
+		return errors.New("usage: pixlog capture history [--platform photoshop] [--json] <history-log> <asset>")
+	}
+	historyPath, assetPath := flags.Arg(0), flags.Arg(1)
+	info, err := os.Stat(historyPath)
+	if err != nil {
+		return err
+	}
+	if info.Size() > 8<<20 {
+		return errors.New("application history log exceeds 8 MiB")
+	}
+	logData, err := os.ReadFile(historyPath)
+	if err != nil {
+		return err
+	}
+	if len(logData) > 8<<20 {
+		return errors.New("application history log exceeds 8 MiB")
+	}
+	outputOID, err := repository.HashFile(assetPath)
+	if err != nil {
+		return err
+	}
+	result, err := capture.ApplicationHistoryRecipe(*platform, outputOID, logData)
+	if err != nil {
+		return err
+	}
+	repo, err := repository.OpenGit("")
+	if err != nil {
+		return err
+	}
+	store, err := repository.OpenGitMediaStore(repo.Root)
+	if err != nil {
+		return err
+	}
+	payloadOID, err := store.Put(result.Payload)
+	if err != nil {
+		return err
+	}
+	var document map[string]any
+	if err := json.Unmarshal(result.Recipe, &document); err != nil {
+		return err
+	}
+	document["vendor"] = map[string]any{"name": *platform, "raw_payload_oid": payloadOID}
+	recipeData, err := json.Marshal(document)
+	if err != nil {
+		return err
+	}
+	recipeOID, err := repo.ImportRecipe(assetPath, recipeData)
+	if err != nil {
+		return err
+	}
+	output := map[string]any{"recipe_oid": recipeOID, "history_oid": payloadOID, "entries": result.Entries}
+	if *asJSON {
+		return writeJSON(stdout, output)
+	}
+	fmt.Fprintf(stdout, "Imported %d Photoshop history entries as recipe %s (history %s)\n", result.Entries, repository.ShortOID(recipeOID), repository.ShortOID(payloadOID))
+	return nil
 }
 
 func runCaptureSessions(args []string, stdout, stderr io.Writer) error {

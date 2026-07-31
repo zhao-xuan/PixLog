@@ -38,6 +38,45 @@ func TestGitMediaRemotePushAndFetch(t *testing.T) {
 		t.Fatalf("write .gitattributes: %v", err)
 	}
 	imageData := encodeMediaTestPNG(t)
+	store, err := OpenGitMediaStore(root)
+	if err != nil {
+		t.Fatalf("OpenGitMediaStore: %v", err)
+	}
+	parentOID, err := store.Put([]byte("reference image bytes"))
+	if err != nil {
+		t.Fatalf("store parent: %v", err)
+	}
+	rawPayloadOID, err := store.Put([]byte(`{"request":"captured"}`))
+	if err != nil {
+		t.Fatalf("store raw payload: %v", err)
+	}
+	recipeData, err := json.Marshal(map[string]any{
+		"schema": "pixlog.recipe/v1",
+		"kind":   "ai-generation",
+		"parents": []any{map[string]any{
+			"asset": parentOID,
+			"role":  "reference-image",
+		}},
+		"vendor": map[string]any{"raw_payload_oid": rawPayloadOID},
+	})
+	if err != nil {
+		t.Fatalf("marshal recipe: %v", err)
+	}
+	recipeOID, err := store.Put(recipeData)
+	if err != nil {
+		t.Fatalf("store recipe: %v", err)
+	}
+	journal, err := OpenProvenanceJournal(root)
+	if err != nil {
+		t.Fatalf("OpenProvenanceJournal: %v", err)
+	}
+	if err := journal.Record(hashBytes(imageData), recipeOID, "hero.png"); err != nil {
+		journal.Close()
+		t.Fatalf("record recipe: %v", err)
+	}
+	if err := journal.Close(); err != nil {
+		t.Fatalf("close provenance journal: %v", err)
+	}
 	if err := os.WriteFile(filepath.Join(root, "hero.png"), imageData, 0o644); err != nil {
 		t.Fatalf("write hero.png: %v", err)
 	}
@@ -63,10 +102,6 @@ func TestGitMediaRemotePushAndFetch(t *testing.T) {
 	}
 	if len(result.Objects) < 2 || result.Bytes == 0 {
 		t.Fatalf("transfer result = %#v", result)
-	}
-	store, err := OpenGitMediaStore(root)
-	if err != nil {
-		t.Fatalf("OpenGitMediaStore: %v", err)
 	}
 	localObjectPath, err := store.ObjectPath(pointer.OID)
 	if err != nil {
@@ -94,6 +129,13 @@ func TestGitMediaRemotePushAndFetch(t *testing.T) {
 	}
 	if !bytes.Equal(restored, imageData) {
 		t.Fatal("remote object did not restore exact image bytes")
+	}
+	for _, oid := range []string{parentOID, rawPayloadOID} {
+		digest := strings.TrimPrefix(oid, "sha256:")
+		remoteObjectPath := filepath.Join(remoteRoot+".pixlog", "objects", "sha256", digest[:2], digest[2:])
+		if _, err := os.Stat(remoteObjectPath); err != nil {
+			t.Fatalf("nested recipe object %s was not uploaded: %v", oid, err)
+		}
 	}
 }
 

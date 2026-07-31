@@ -10,10 +10,13 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
 const redactedValue = "[REDACTED]"
+
+var textSecretPattern = regexp.MustCompile(`(?i)(^|[^a-z0-9])(authorization|(?:x[ _-]?)?api[ _-]?key|aws[ _-]?access[ _-]?key[ _-]?id|key|(?:[a-z0-9]+[ _-])?token|client[ _-]?secret|secret|password|passwd|(?:set[ _-]?|session[ _-]?)?cookie|credential|signature|sig|webhook)([ \t]*[:=][ \t]*)([^\r\n]+)`)
 
 var sensitiveKeys = map[string]struct{}{
 	"authorization":  {},
@@ -75,6 +78,10 @@ func RedactURL(rawURL string) string {
 	return parsed.String()
 }
 
+func RedactText(data []byte) []byte {
+	return textSecretPattern.ReplaceAll(data, []byte("$1$2$3"+redactedValue))
+}
+
 func RedactPayload(contentType string, data []byte) ([]byte, error) {
 	mediaType, parameters, err := mime.ParseMediaType(contentType)
 	if err != nil {
@@ -115,6 +122,9 @@ func redactMultipart(data []byte, boundary string) ([]byte, error) {
 	reader := multipart.NewReader(bytes.NewReader(data), boundary)
 	var output bytes.Buffer
 	writer := multipart.NewWriter(&output)
+	if err := writer.SetBoundary(boundary); err != nil {
+		return nil, fmt.Errorf("preserve multipart boundary: %w", err)
+	}
 	for {
 		part, err := reader.NextPart()
 		if errors.Is(err, io.EOF) {
@@ -123,12 +133,7 @@ func redactMultipart(data []byte, boundary string) ([]byte, error) {
 		if err != nil {
 			return nil, fmt.Errorf("decode multipart payload for redaction: %w", err)
 		}
-		var target io.Writer
-		if part.FileName() != "" {
-			target, err = writer.CreateFormFile(part.FormName(), part.FileName())
-		} else {
-			target, err = writer.CreateFormField(part.FormName())
-		}
+		target, err := writer.CreatePart(part.Header)
 		if err != nil {
 			part.Close()
 			return nil, fmt.Errorf("encode redacted multipart payload: %w", err)

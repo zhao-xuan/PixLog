@@ -163,6 +163,9 @@ func (g *GitRepository) ImportRecipe(assetPath string, data []byte) (string, err
 	if err := g.stage(stagePaths); err != nil {
 		return "", err
 	}
+	if _, err := gitOutput(g.Root, "add", "--renormalize", "--", relativePath); err != nil {
+		return "", fmt.Errorf("refresh recipe in Git pointer: %w", err)
+	}
 	return oid, nil
 }
 

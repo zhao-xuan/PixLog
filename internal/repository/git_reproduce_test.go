@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/pixlog/pixlog/internal/recipe"
@@ -95,5 +96,37 @@ func TestGitReproductionPlanRequiresCapturedSourceState(t *testing.T) {
 	runGitTest(t, root, "checkout", "--quiet", sourceContext.HeadOID)
 	if err := repo.ValidateReproduction(plan); err != nil {
 		t.Fatalf("ValidateReproduction at source state: %v", err)
+	}
+}
+
+func TestValidateRequestReproductionRejectsRedactedPathAndNonOriginBase(t *testing.T) {
+	repo := &GitRepository{}
+	plan := ReproductionPlan{
+		RecipeOID: "sha256:" + strings.Repeat("a", 64),
+		Request: &ReproductionRequest{
+			Method: "POST", Path: "/v1/images?api_key=%5BREDACTED%5D",
+			RequestOID: "sha256:" + strings.Repeat("b", 64), Fidelity: recipe.FidelityExactRequest,
+		},
+	}
+	if _, err := repo.ValidateRequestReproduction(plan, "https://provider.example"); err == nil {
+		t.Fatal("ValidateRequestReproduction accepted a redacted query")
+	}
+	plan.Request.Path = "/v1/images"
+	if _, err := repo.ValidateRequestReproduction(plan, "https://provider.example/api"); err == nil {
+		t.Fatal("ValidateRequestReproduction accepted a base URL with a path")
+	}
+}
+
+func TestReproductionRequestFromOperationsSkipsUnsupportedMethods(t *testing.T) {
+	operations := []struct {
+		Fidelity   recipe.CaptureFidelity `json:"fidelity"`
+		Normalized json.RawMessage        `json:"normalized"`
+	}{
+		{Fidelity: recipe.FidelityExactRequest, Normalized: json.RawMessage(`{"platform":"comfyui","method":"GET","path":"/history","request_oid":"sha256:` + strings.Repeat("a", 64) + `"}`)},
+		{Fidelity: recipe.FidelityExactRequest, Normalized: json.RawMessage(`{"platform":"comfyui","method":"POST","path":"/prompt","request_oid":"sha256:` + strings.Repeat("b", 64) + `"}`)},
+	}
+	request := reproductionRequestFromOperations("comfyui-proxy", recipe.FidelityExactRequest, operations)
+	if request == nil || request.Method != "POST" || request.Path != "/prompt" {
+		t.Fatalf("request = %#v", request)
 	}
 }

@@ -110,6 +110,9 @@ git commit -m "Generate resized artwork"
 # 显式附加规范化配方：
 pixlog recipe import output.png examples/recipe.json
 
+# 根据两张图片生成明确标为低可信度的推断配方：
+pixlog recipe infer before.png output.png
+
 # 从经过验证的源状态规划或执行捕获命令：
 pixlog reproduce --revision HEAD output.png
 pixlog reproduce --revision HEAD --execute output.png
@@ -122,10 +125,87 @@ pixlog reproduce --revision HEAD --execute output.png
 配方关联记录在 `.git/pixlog/journal.sqlite` 中，因此随后使用普通 `git add` 也会
 把溯源引用写入 pointer。
 
+## 应用与 Provider 捕获
+
+PixLog 使用同一个本地捕获协议连接原生插件、显式 API 代理和由用户触发的浏览器
+捕获，绝不进行透明 TLS 中间人拦截。先通过 CLI 查看各平台的配置步骤：
+
+```bash
+pixlog capture guide
+pixlog capture guide photoshop
+pixlog capture guide comfyui
+pixlog capture guide automatic1111
+pixlog capture guide openai
+pixlog capture guide firefly
+pixlog capture guide browser
+```
+
+Photoshop UXP 与浏览器 adapter 使用带 token 的 loopback daemon；API 工具使用
+显式代理，并由用户把客户端指向代理地址：
+
+```bash
+export PIXLOG_CAPTURE_TOKEN="$(pixlog capture token)"
+pixlog capture serve
+
+# 在另一个 shell 中运行，并把 API 客户端改到 7861 端口。
+pixlog capture proxy --platform automatic1111 \
+	--upstream http://127.0.0.1:7860 --listen 127.0.0.1:7861
+```
+
+查看 session 后，将它与输出的精确字节绑定：
+
+```bash
+pixlog capture sessions
+pixlog capture show <session-id>
+pixlog capture finalize <session-id> assets/output.png
+```
+
+Photoshop adapter 位于 `adapters/photoshop`，Chromium MV3 adapter 位于
+`adapters/browser`。无法使用 Photoshop 原生捕获时，可运行
+`pixlog capture history photoshop-history.txt assets/output.psd` 导入详细 History Log。
+
+Provider 请求在进入 CAS 前会脱敏。只有标记为 `exact-request` 的 recipe 可以重放，
+并且执行时必须提供新的显式 base URL；当前可选 Bearer 认证只从用户指定的环境变量读取：
+
+```bash
+pixlog reproduce --revision HEAD assets/output.png
+pixlog reproduce --revision HEAD --execute \
+	--base-url https://api.example.test \
+	--auth-env PROVIDER_API_TOKEN \
+	--response-output response.json \
+	assets/output.png
+```
+
+PixLog 不会执行 recipe 中捕获的远程 host 或密钥；payload 中只要存在
+`[REDACTED]` 就会拒绝执行，而不是猜测缺失值。
+
+## Metadata 与 Content Credentials
+
+PNG 与 JPEG 检查可提取支持的 EXIF、XMP、ICC、IPTC 和 C2PA 信号，并导入为
+provenance recipe：
+
+```bash
+pixlog metadata inspect assets/output.jpg
+pixlog metadata import assets/output.jpg
+```
+
+C2PA 验证和签名把密码学与 trust store 处理交给官方外部 `c2patool`：
+
+```bash
+pixlog c2pa verify assets/output.jpg
+pixlog c2pa import assets/output.jpg
+pixlog c2pa export --output manifest.json assets/output.jpg
+pixlog c2pa sign --output signed.jpg --manifest manifest.json assets/output.jpg
+```
+
+导出只映射公开 action 摘要；私有 prompt 与完整 vendor payload 仍保留在 PixLog
+recipe 对象中。
+
 ## 媒体远程与 Hydration
 
 pre-push hook 会扫描即将推送的提交，在 Git 更新 refs 前上传其引用的 blob、
-manifest 和 recipe。已有用户 pre-push hook 会被保留并执行。
+manifest、recipe 以及 recipe 递归引用的 CAS 对象。已有用户 pre-push hook 会被
+保留并执行。
 
 本地 Git remote 会自动使用相邻的 `.pixlog` 媒体目录。也可以配置显式文件或
 HTTP Batch endpoint：
@@ -149,6 +229,8 @@ pixlog clone /srv/git/artwork.git teammate-copy
 
 ```bash
 pixlog lineage assets/hero.png
+pixlog lineage --graph --verify assets/hero.png
+pixlog lineage --graph --hydrate --verify assets/hero.png
 pixlog blame --point 823,441 assets/hero.png
 
 pixlog verify
@@ -159,8 +241,10 @@ pixlog locks --remote origin
 pixlog unlock --remote origin assets/hero.psd
 ```
 
-lineage 和视觉 blame 会沿 Git 历史跨 rename 跟踪。锁支持本地与共享文件 endpoint；
-HTTP 锁需要未来的服务端实现。
+lineage 和视觉 blame 会沿 Git 历史跨 rename 跟踪。graph 模式递归发现并验证 recipe
+的输入、输出、模型、mask、workflow、vendor payload 和嵌套 recipe；`--hydrate`
+从 origin 媒体 endpoint 获取缺失对象。锁支持本地与共享文件 endpoint；HTTP 锁
+需要未来的服务端实现。
 
 ## 策略与 CI
 
@@ -197,7 +281,9 @@ git push origin v0.2.0
 | --- | --- |
 | 初始化 | `init`、`install`、`track`、`git install` |
 | 图像状态 | `add`、`status`、`diff`、`compare`、`inspect` |
-| 溯源 | `recipe import/show/diff`、`run`、`reproduce`、`lineage`、`blame` |
+| 溯源 | `recipe import/show/diff/infer`、`run`、`reproduce`、`lineage`、`blame` |
+| 捕获 | `capture serve/status/token/guide/proxy/history/sessions/show/finalize` |
+| Metadata | `metadata inspect/import`、`c2pa verify/import/export/sign` |
 | 媒体 | `hydrate`、`dehydrate`、`verify`、`doctor` |
 | 协作 | `lock`、`unlock`、`locks`、`check` |
 | Git 代理 | `commit`、`log`、`show`、`push`、`pull`、`merge`、`rebase` 等 Git 命令 |
@@ -213,6 +299,7 @@ git push origin v0.2.0
 - [Git 集成与 Phase 1-5 设计](docs/GIT_INTEGRATION.md)
 - [功能进度](docs/FEATURE_PROGRESS.md)
 - [配方与溯源格式](docs/RECIPE.md)
+- [平台捕获与 adapter 指南](docs/PLATFORM_INTEGRATION.md)
 - [参与贡献](CONTRIBUTING.md)
 - [安全策略](SECURITY.md)
 

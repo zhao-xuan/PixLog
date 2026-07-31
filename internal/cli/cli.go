@@ -854,7 +854,7 @@ func runLog(args []string, stdout, stderr io.Writer) error {
 
 func runRecipe(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: pixlog recipe <import|show|diff> ...")
+		return errors.New("usage: pixlog recipe <import|show|diff|infer> ...")
 	}
 	switch args[0] {
 	case "import":
@@ -930,6 +930,63 @@ func runRecipe(args []string, stdout, stderr io.Writer) error {
 		for _, change := range changes {
 			fmt.Fprintf(stdout, "  %-32s %v -> %v\n", change.Field, displayEmpty(change.Old), displayEmpty(change.New))
 		}
+		return nil
+	case "infer":
+		flags := newFlagSet("recipe infer", stderr)
+		assetPath := flags.String("asset", "", "asset that receives the inferred recipe; defaults to AFTER")
+		threshold := flags.Int("threshold", 8, "per-channel visual change threshold from 0 to 255")
+		asJSON := flags.Bool("json", false, "emit machine-readable result")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if flags.NArg() != 2 || *threshold < 0 || *threshold > 255 {
+			return errors.New("usage: pixlog recipe infer [--asset <path>] [--threshold <0-255>] [--json] <before> <after>")
+		}
+		beforePath, afterPath := flags.Arg(0), flags.Arg(1)
+		if *assetPath == "" {
+			*assetPath = afterPath
+		}
+		result, err := recipe.InferFiles(beforePath, afterPath, imaging.DiffOptions{Threshold: uint8(*threshold)})
+		if err != nil {
+			return err
+		}
+		assetOID, err := repository.HashFile(*assetPath)
+		if err != nil {
+			return err
+		}
+		if assetOID != result.OutputOID {
+			return errors.New("the recipe target does not contain the exact AFTER bytes")
+		}
+		repo, err := repository.OpenGit("")
+		if err != nil {
+			return err
+		}
+		store, err := repository.OpenGitMediaStore(repo.Root)
+		if err != nil {
+			return err
+		}
+		for _, path := range []string{beforePath, afterPath} {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			if _, err := store.Put(data); err != nil {
+				return err
+			}
+		}
+		recipeOID, err := repo.ImportRecipe(*assetPath, result.Recipe)
+		if err != nil {
+			return err
+		}
+		output := map[string]any{
+			"recipe_oid": recipeOID, "input_oid": result.InputOID,
+			"output_oid": result.OutputOID, "operation": result.Operation,
+			"confidence": result.Confidence,
+		}
+		if *asJSON {
+			return writeJSON(stdout, output)
+		}
+		fmt.Fprintf(stdout, "Inferred %s (confidence %.2f), recipe %s\n", result.Operation, result.Confidence, repository.ShortOID(recipeOID))
 		return nil
 	default:
 		return fmt.Errorf("unknown recipe command %q", args[0])
@@ -1246,12 +1303,16 @@ func runReproduce(args []string, stdout, stderr io.Writer) error {
 	flags := newFlagSet("reproduce", stderr)
 	revision := flags.String("revision", "HEAD", "recipe revision")
 	execute := flags.Bool("execute", false, "execute a validated captured command")
+	baseURL := flags.String("base-url", "", "explicit provider base URL for exact-request replay")
+	authEnv := flags.String("auth-env", "", "environment variable containing a provider bearer token")
+	responseOutput := flags.String("response-output", "", "write a replay response body to this path")
+	timeout := flags.Duration("timeout", 2*time.Minute, "provider request timeout")
 	asJSON := flags.Bool("json", false, "emit machine-readable JSON")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}
 	if flags.NArg() != 1 {
-		return errors.New("usage: pixlog reproduce [--revision <rev>] [--execute] [--json] <asset>")
+		return errors.New("usage: pixlog reproduce [--revision <rev>] [--execute] [--base-url <url>] [--auth-env <name>] [--response-output <path>] [--json] <asset>")
 	}
 	repo, err := repository.OpenGit("")
 	if err != nil {
@@ -1268,6 +1329,11 @@ func runReproduce(args []string, stdout, stderr io.Writer) error {
 		fmt.Fprintf(stdout, "Recipe:    %s\n", plan.RecipeOID)
 		fmt.Fprintf(stdout, "Asset:     %s @ %s\n", plan.Asset, plan.Revision)
 		fmt.Fprintf(stdout, "Kind:      %s\n", plan.Kind)
+		if plan.Request != nil {
+			fmt.Fprintf(stdout, "Request:   %s %s (%s)\n", plan.Request.Method, plan.Request.Path, plan.Request.Provider)
+			fmt.Fprintf(stdout, "Payload:   %s\n", plan.Request.RequestOID)
+			return nil
+		}
 		if plan.Command == nil {
 			fmt.Fprintln(stdout, "Command:   (adapter required)")
 			return nil
@@ -1278,6 +1344,12 @@ func runReproduce(args []string, stdout, stderr io.Writer) error {
 	}
 	if *asJSON {
 		return errors.New("--json cannot be combined with --execute")
+	}
+	if plan.Request != nil {
+		if *baseURL == "" {
+			return errors.New("--base-url is required to replay a captured provider request")
+		}
+		return executeCapturedRequest(repo, plan, *baseURL, *authEnv, *responseOutput, *timeout, stdout)
 	}
 	if err := repo.ValidateReproduction(plan); err != nil {
 		return err
@@ -1898,13 +1970,13 @@ Image and provenance:
 	diff       Inspect byte, metadata, recipe, and visual changes
 	compare    Compare two image files directly
 	inspect    Show an asset manifest and provenance IDs
-	recipe     Import, inspect, and compare generation recipes
+	recipe     Import, inspect, diff, or infer provenance recipes
 	run        Capture a command and stage its changed image outputs
-	capture    Run the capture daemon, proxies, health checks, and platform guides
+	capture    Guide adapters; run daemon/proxy sessions; import history; finalize recipes
 	metadata   Inspect or import EXIF, XMP, ICC, IPTC, PNG, and C2PA metadata
 	c2pa       Verify, import, export, and sign Content Credentials with c2patool
-	reproduce  Plan or execute a source-state-validated captured command
-	lineage    Show rename-aware Git image history
+	reproduce  Plan or execute guarded command and exact-request reproduction
+	lineage    Show Git history or recursively verify/hydrate the provenance graph
 	blame      Find the Git commit that last changed an image point
 
 Media and collaboration:

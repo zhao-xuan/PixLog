@@ -3,6 +3,7 @@ package capture
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -188,6 +189,7 @@ func (proxy *Proxy) modifyResponse(response *http.Response) error {
 		"platform":     proxy.platform,
 		"method":       captured.method,
 		"path":         captured.path,
+		"content_type": captured.contentType,
 		"status_code":  response.StatusCode,
 		"request_oid":  captured.requestOID,
 		"response_oid": responseOID,
@@ -204,8 +206,9 @@ func (proxy *Proxy) modifyResponse(response *http.Response) error {
 	if err != nil {
 		return err
 	}
+	jobID := ""
 	if externalID, status := proxyJob(body, proxy.platform, response.StatusCode); externalID != "" {
-		_, err = proxy.journal.UpsertCaptureJob(repository.CaptureJob{
+		job, jobErr := proxy.journal.UpsertCaptureJob(repository.CaptureJob{
 			SessionID:   proxy.session.ID,
 			Provider:    proxy.platform,
 			ExternalID:  externalID,
@@ -215,11 +218,85 @@ func (proxy *Proxy) modifyResponse(response *http.Response) error {
 			StartedAt:   captured.startedAt,
 			Metadata:    mustProxyJSON(map[string]any{"event_id": event.ID, "path": captured.path}),
 		})
+		if jobErr != nil {
+			return jobErr
+		}
+		jobID = job.ID
+	}
+	if err := proxy.recordResponseArtifacts(event.ID, jobID, responseOID, response.Header.Get("Content-Type"), body); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (proxy *Proxy) recordResponseArtifacts(eventID, jobID, responseOID, contentType string, body []byte) error {
+	oids := []string{}
+	if strings.HasPrefix(strings.ToLower(contentType), "image/") && responseOID != "" {
+		oids = append(oids, responseOID)
+	}
+	for _, imageData := range ProviderResponseImages(proxy.platform, body) {
+		oid, err := proxy.store.Put(imageData)
 		if err != nil {
+			return err
+		}
+		oids = append(oids, oid)
+	}
+	seen := map[string]bool{}
+	for _, oid := range oids {
+		if seen[oid] {
+			continue
+		}
+		seen[oid] = true
+		if _, err := proxy.journal.RecordCaptureArtifact(repository.CaptureArtifact{
+			SessionID: proxy.session.ID, JobID: jobID, EventID: eventID,
+			Role: "output", ContentOID: oid,
+		}); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// ProviderResponseImages extracts validated image bytes from known provider JSON envelopes.
+func ProviderResponseImages(platform string, body []byte) [][]byte {
+	if !json.Valid(body) {
+		return nil
+	}
+	var document struct {
+		Images []string `json:"images"`
+		Data   []struct {
+			Base64 string `json:"b64_json"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &document); err != nil {
+		return nil
+	}
+	encoded := []string{}
+	switch platform {
+	case "automatic1111":
+		encoded = document.Images
+	case "openai":
+		for _, item := range document.Data {
+			encoded = append(encoded, item.Base64)
+		}
+	default:
+		return nil
+	}
+	images := [][]byte{}
+	for _, value := range encoded {
+		if separator := strings.Index(value, ","); strings.HasPrefix(value, "data:") && separator >= 0 {
+			value = value[separator+1:]
+		}
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(value))
+		if err != nil || len(decoded) == 0 || len(decoded) > maxCaptureBody {
+			continue
+		}
+		if !strings.HasPrefix(http.DetectContentType(decoded), "image/") {
+			continue
+		}
+		images = append(images, decoded)
+	}
+	return images
 }
 
 func (proxy *Proxy) handleProxyError(writer http.ResponseWriter, request *http.Request, proxyErr error) {

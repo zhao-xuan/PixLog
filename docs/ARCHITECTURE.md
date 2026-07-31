@@ -45,7 +45,7 @@ machine.
   pixlog/
     objects/
       sha256/ab/cdef...      # blob, manifest, and recipe objects
-    journal.sqlite           # local content-to-recipe association
+    journal.sqlite           # associations plus capture sessions/events/jobs/artifacts
     locks/                   # local lock records
 ```
 
@@ -139,6 +139,16 @@ Recipes are normalized `pixlog.recipe/v1` CAS objects. Embedded ComfyUI and
 AUTOMATIC1111 metadata can create recipes, and manual import records an association
 for the current content OID.
 
+A recipe carries two independent trust dimensions:
+
+- `capture.fidelity`: `exact-request`, `exact-command`, `embedded-metadata`,
+  `application-history`, `ui-observed`, or `inferred`.
+- `reproducibility.status`: `exact`, `best-effort`, `request-reproducible`,
+  `provenance-only`, `inferred`, or `unverified`.
+
+Capture quality does not imply deterministic reproduction. A complete cloud API
+request can still depend on a provider model that changes behind a stable name.
+
 `pixlog run` compares image content before and after a child command. On exit 0 it
 stores a command recipe, records content-to-recipe rows, and stages changed outputs
 and tracked deletions through Git. On failure it leaves the Git index unchanged.
@@ -148,14 +158,80 @@ Arguments can be redacted; environment variables and an uncommitted source patch
 are not captured.
 
 Reproduction is deliberately guarded. Only an unredacted command recipe with a
-matching clean source HEAD/index can execute. Recipe JSON is data unless the user
-explicitly requests this validated execution path.
+matching clean source HEAD/index can execute. An `exact-request` recipe can produce
+an HTTP plan, but execution requires a new explicit `--base-url`; authentication
+may only be injected from a user-named environment variable. PixLog ignores the
+captured remote host and never stores or executes its credentials. A request body
+containing a redaction marker is rejected. Recipe JSON is data unless the user
+explicitly requests one of these validated execution paths.
+
+## Capture Protocol And Adapters
+
+`pixlog capture serve` exposes `pixlog.capture/v1` on a loopback-only HTTP server.
+A configured token enables authenticated browser CORS; without a token, browser
+origins are denied. The SQLite journal stores sessions, ordered operation events,
+provider jobs, checkpoints, and input/output artifacts. `capture finalize` turns a
+session into a canonical recipe and associates it with the exact output content.
+
+```mermaid
+flowchart LR
+  P[Photoshop UXP] --> D[Loopback capture daemon]
+  B[Chromium extension] --> D
+  C[Explicit API client] --> X[PixLog provider proxy]
+  X --> U[Configured upstream]
+  X --> J[Capture journal]
+  D --> J
+  J --> F[Finalize session]
+  F --> O[Recipe and payload CAS]
+  O --> G[Git pointer]
+```
+
+Adapters are explicit and share this protocol:
+
+- `adapters/photoshop` listens only for an allow-list of UXP action events and
+  sends raw Action Descriptors plus normalized operations.
+- `adapters/browser` captures only a user-triggered observation and labels it
+  `ui-observed`; it is not a network interceptor.
+- `capture proxy` forwards to a user-selected ComfyUI, AUTOMATIC1111, OpenAI, or
+  Firefly origin and stores redacted request/response envelopes as `exact-request`.
+- Direct `image/*` responses and recognized AUTOMATIC1111 `images[]` / OpenAI
+  `data[].b64_json` outputs are decoded, MIME-checked, and registered as CAS output
+  artifacts; asynchronous output polling remains provider-specific.
+- Photoshop History Log import is a lower-fidelity `application-history` fallback.
+- `recipe infer` compares before/after files and always emits `inferred` fidelity.
+
+Headers, structured payloads, signed query strings, and history text are scrubbed
+before storage. Unknown unstructured provider payloads are represented by a digest
+rather than copied into CAS. There is no transparent TLS interception.
+
+## Metadata And C2PA
+
+PNG/JPEG inspection extracts supported EXIF, XMP, ICC, IPTC, and C2PA presence and
+digest fields. Metadata import keeps a scrubbed raw payload object and attaches an
+`embedded-metadata` recipe.
+
+C2PA cryptography is delegated to the official external `c2patool`. PixLog can
+verify and import a credential, export a public manifest definition from a recipe,
+and invoke signing. Export maps public actions, using `c2pa.opened` when a recipe
+has parents; standard ingredient assertions are not emitted yet. Private prompts
+and complete vendor payloads remain in PixLog CAS.
+
+## Provenance Graph
+
+Path lineage follows Git history and renames. `lineage --graph` adds the immutable
+object graph by recursively discovering SHA-256 references in recipe inputs,
+outputs, models, workflows, masks, vendor payloads, and nested recipes. Graph reads
+verify every object; `--hydrate` fetches missing objects through the configured
+origin endpoint, and `--verify` fails if the closure remains incomplete.
 
 ## Media Transfer
 
 The pre-push dispatcher receives Git's ref update list, scans newly reachable
 commit blobs for pointers, and uploads all referenced authoritative objects before
-Git pushes refs. It executes a preserved user hook before PixLog transfer.
+Git pushes refs. For each recipe it recursively uploads the same reference closure
+used by the provenance graph, so masks, models, workflows, raw vendor payloads, and
+nested recipes are portable. It executes a preserved user hook before PixLog
+transfer.
 
 File endpoints copy and verify sharded CAS objects. HTTP endpoints use an
 LFS-style Batch request followed by basic upload/download/verify actions. Uploads
@@ -199,9 +275,13 @@ outside pixel counts and connected outside regions.
 - Object paths derive only from validated digests.
 - Repository-relative asset and reproduction paths reject traversal.
 - Driver commands are local Git config, never executable tracked configuration.
-- Command arguments may contain secrets and should be redacted before capture.
+- Provider headers and structured bodies are scrubbed before storage; replay
+  rejects incomplete redacted requests.
+- Command arguments may contain secrets and should use `--redact-args`.
 - Tokens belong in Git config or a credential store, not tracked configuration.
-- C2PA signing and trust verification are not implemented.
+- Capture and proxy listeners reject non-loopback bind addresses.
+- C2PA trust and signing behavior comes from the selected external `c2patool`, not
+  a PixLog-owned cryptographic implementation.
 
 The complete Git workflow and Phase status are documented in
 [GIT_INTEGRATION.md](GIT_INTEGRATION.md) and
