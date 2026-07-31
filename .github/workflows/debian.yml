@@ -39,15 +39,18 @@ jobs:
           dpkg-buildpackage -us -uc
       - name: Run Lintian
         run: lintian --fail-on error ../pixlog_0.1.0-1_*.changes
+      - name: Stage package artifacts
+        run: |
+          mkdir artifacts
+          cp ../pixlog_0.1.0-1_*.buildinfo artifacts/
+          cp ../pixlog_0.1.0-1_*.changes artifacts/
+          cp ../pixlog_0.1.0-1_*.deb artifacts/
+          cp ../pixlog_0.1.0-1.debian.tar.xz artifacts/
+          cp ../pixlog_0.1.0-1.dsc artifacts/
+          cp ../pixlog_0.1.0.orig.tar.gz artifacts/
       - name: Upload packages
         uses: actions/upload-artifact@v4
         with:
           name: pixlog-debian-0.1.0-1
-          path: |
-            ../pixlog_0.1.0-1_*.buildinfo
-            ../pixlog_0.1.0-1_*.changes
-            ../pixlog_0.1.0-1_*.deb
-            ../pixlog_0.1.0-1.debian.tar.xz
-            ../pixlog_0.1.0-1.dsc
-            ../pixlog_0.1.0.orig.tar.gz
+          path: artifacts/
           if-no-files-found: error
