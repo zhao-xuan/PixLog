@@ -17,8 +17,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pixlog/pixlog/internal/capture"
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/capture"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 func runCapture(args []string, stdout, stderr io.Writer) error {

@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-version="${PIXLOG_VERSION:-v0.1.0}"
+version="${PIXLOG_VERSION:-v0.1.1}"
 version="v${version#v}"
 release_version="${version#v}"
 

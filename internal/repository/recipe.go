@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 func (r *Repository) ImportRecipe(assetPath string, data []byte) (string, error) {

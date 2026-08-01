@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 func TestProvenanceGraphTraversesAndVerifiesRecipeReferences(t *testing.T) {

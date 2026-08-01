@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 var ErrGitImageConflict = errors.New("image changes overlap or cannot be merged safely")

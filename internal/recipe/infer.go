@@ -8,7 +8,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/pixlog/pixlog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
 )
 
 type InferenceResult struct {

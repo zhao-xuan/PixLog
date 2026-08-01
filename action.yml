@@ -1,5 +1,5 @@
 name: PixLog Visual Policy
-description: Check image format, provenance, visual change, SSIM, and protected regions in a Git range.
+description: Fail pull requests when image changes exceed visual, provenance, SSIM, region, or mask policies.
 author: Xuan Zhao
 
 branding:
@@ -10,7 +10,7 @@ inputs:
   version:
     description: PixLog release tag to install.
     required: false
-    default: v0.1.0
+    default: v0.1.1
   policy:
     description: Path to the PixLog policy file.
     required: false

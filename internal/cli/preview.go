@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"github.com/mattn/go-isatty"
-	"github.com/pixlog/pixlog/internal/imaging"
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 const defaultPreviewSize = "30x14"

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	c2paintegration "github.com/pixlog/pixlog/internal/c2pa"
-	"github.com/pixlog/pixlog/internal/capture"
-	"github.com/pixlog/pixlog/internal/imaging"
-	"github.com/pixlog/pixlog/internal/recipe"
-	"github.com/pixlog/pixlog/internal/repository"
+	c2paintegration "github.com/zhao-xuan/PixLog/internal/c2pa"
+	"github.com/zhao-xuan/PixLog/internal/capture"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 func runMetadata(args []string, stdout, stderr io.Writer) error {

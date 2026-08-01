@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 type ApplicationHistoryResult struct {

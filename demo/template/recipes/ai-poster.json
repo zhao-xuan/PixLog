@@ -1,0 +1,37 @@
+{
+  "schema": "pixlog.recipe/v1",
+  "kind": "ai-generation-import",
+  "tool": {
+    "name": "Hugging Face Spaces"
+  },
+  "model": {
+    "provider": "Stability AI",
+    "name": "Stable Diffusion 3.5 Large",
+    "license": "Stability AI Community License"
+  },
+  "parameters": {
+    "prompt": "a photograph of an astronaut riding a horse",
+    "width": 1024,
+    "height": 1024
+  },
+  "source": {
+    "type": "wikimedia-commons",
+    "file_page": "https://commons.wikimedia.org/wiki/File:Astronaut_Riding_a_Horse_(SD3.5).webp",
+    "generator": "https://huggingface.co/spaces/stabilityai/stable-diffusion-3.5-large",
+    "sha256": "sha256:0426c90afa64550e939e9f93403f2ed1e04bc52de55f12bb9b82a0a53cd8b1fd",
+    "license": "public-domain"
+  },
+  "postprocess": {
+    "tool": "ImageMagick",
+    "operation": "cover resize and center crop to 960x540 PNG"
+  },
+  "capture": {
+    "source": "wikimedia-commons-file-page",
+    "adapter": "manual-import",
+    "adapter_version": "1",
+    "fidelity": "inferred"
+  },
+  "reproducibility": {
+    "status": "provenance-only"
+  }
+}

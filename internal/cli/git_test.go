@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 func TestStatusAndDiffUseGitWithoutPixLogRepository(t *testing.T) {

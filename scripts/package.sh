@@ -36,7 +36,7 @@ fi
 rm -rf "$staging_dir"
 mkdir -p "$staging_dir"
 
-ldflags="-s -w -X github.com/pixlog/pixlog/internal/cli.Version=${version}"
+ldflags="-s -w -X github.com/zhao-xuan/PixLog/internal/cli.Version=${version}"
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \
   go build -trimpath -ldflags "$ldflags" -o "${staging_dir}/pixlog${binary_extension}" ./cmd/pixlog
 CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" \

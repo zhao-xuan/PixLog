@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 func TestServerCapturesRedactedEventAndRecipe(t *testing.T) {

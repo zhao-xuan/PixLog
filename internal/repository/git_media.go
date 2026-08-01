@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/pixlog/pixlog/internal/imaging"
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 type GitMediaStore struct {

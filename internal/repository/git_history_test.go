@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
 )
 
 func TestGitLineageAndBlameFollowRename(t *testing.T) {

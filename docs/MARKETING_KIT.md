@@ -34,27 +34,26 @@ GitHub 自动播放，MP4 适合社交平台，PNG 用作封面与无动画回�
 - Provenance: “PixLog shows the model, prompt, seed, tool, and reproducibility
   status attached to an AI-generated image in Git.”
 
-## 演示仓库
+## 同仓演示
 
-执行 `make marketing-demo` 会生成 `dist/marketing/pixlog-demo-public`。将该目录
-作为独立的 `pixlog-demo` GitHub 仓库发布；它包含一条初始提交和确定性原图。访问者
-运行 `bash setup.sh` 后，会得到视觉 diff、blame、recipe 与策略检查所需的完整历史。
+执行 `make demo` 会在主仓库的 `demo/workspace` 中生成隔离的五提交 Git 历史。
+该目录由父仓库忽略，不会修改主仓库历史；访问者无需另行 clone 仓库，就能运行
+视觉 diff、blame、recipe 与策略检查。
 
 发布前验证：
 
 ```bash
-make marketing-demo
-cd dist/marketing/pixlog-demo-public
-PATH="../../../../bin:$PATH" bash setup.sh
-pixlog diff HEAD~1 HEAD -- assets/hero.png
+make demo
+cd demo/workspace
+../../bin/pixlog diff HEAD~1 HEAD -- assets/hero.png
 ```
 
 ## GitHub Action
 
 根目录的 `action.yml` 提供 composite Action，负责下载并校验 Release、安装 Git
 集成、运行 PR revision range 策略，并把结果写入 Actions Summary。完整示例位于
-`examples/pixlog-check.yml`。发布包含 Action 的稳定标签后，生产仓库应把 `@main`
-改为版本标签或完整 commit SHA。
+`examples/pixlog-check.yml`。生产仓库使用 `zhao-xuan/PixLog@v0.1.1`，高保障环境
+可以进一步固定为完整 commit SHA。
 
 ## AI 自动录屏
 

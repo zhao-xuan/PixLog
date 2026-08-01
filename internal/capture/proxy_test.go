@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 func TestProxyForwardsOriginalAndCapturesRedactedPayloads(t *testing.T) {

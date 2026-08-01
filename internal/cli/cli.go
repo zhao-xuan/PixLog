@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pixlog/pixlog/internal/imaging"
-	"github.com/pixlog/pixlog/internal/recipe"
-	"github.com/pixlog/pixlog/internal/repository"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/repository"
 )
 
 var Version = "0.1.0-dev"

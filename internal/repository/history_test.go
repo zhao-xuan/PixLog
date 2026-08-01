@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/pixlog/pixlog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
 )
 
 func TestHistoryRestoreBranchAndBlame(t *testing.T) {

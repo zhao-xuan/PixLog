@@ -4,8 +4,16 @@
 /dist/
 /pixlog
 *.test
+/demo/workspace/
 /marketing/*
 !/marketing/assets/
 !/marketing/assets/**
+!/marketing/README.md
+!/marketing/tapes/
+!/marketing/tapes/**
 /scripts/marketing/*
 !/scripts/marketing/export-readme-assets.sh
+!/scripts/marketing/export-social-preview.sh
+!/scripts/marketing/prepare-recording.sh
+!/scripts/marketing/record-demos.sh
+!/scripts/marketing/update-source-assets.sh

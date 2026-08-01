@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/pixlog/pixlog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
 )
 
 type Inspection struct {

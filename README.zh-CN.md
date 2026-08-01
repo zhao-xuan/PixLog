@@ -52,11 +52,17 @@
 静态图使用与录屏相同且确定性的 ImageMagick 操作生成。来源及许可证信息记录在
 [marketing/assets/sources/README.md](marketing/assets/sources/README.md)。
 
+直接在本仓库运行完整演示：
+
 ```bash
-brew install zhao-xuan/tap/pixlog
-pixlog init
-pixlog diff --staged
+git clone https://github.com/zhao-xuan/PixLog.git
+cd PixLog
+brew install zhao-xuan/tap/pixlog chafa imagemagick
+bash demo/setup.sh
+cd demo/workspace && pixlog diff HEAD~1 HEAD -- assets/hero.png
 ```
+
+视觉 blame、AI 溯源和故意失败的策略检查命令见 [`demo/`](demo/README.md)。
 
 PixLog 是面向图像资产的 Git 兼容媒体与溯源层。Git 负责索引、提交、分支、合并
 和远程仓库；PixLog 增加：
@@ -90,10 +96,11 @@ make build
 ./bin/pixlog version
 ```
 
-将两个命令入口安装到 `GOBIN`：
+从 canonical module 将两个命令入口安装到 `GOBIN`：
 
 ```bash
-go install ./cmd/pixlog ./cmd/git-pixlog
+go install github.com/zhao-xuan/PixLog/cmd/pixlog@latest
+go install github.com/zhao-xuan/PixLog/cmd/git-pixlog@latest
 ```
 
 当 `git-pixlog` 位于 `PATH` 中时，`git pixlog diff` 等价于 `pixlog diff`。
@@ -323,6 +330,19 @@ pixlog check --range origin/main...HEAD
 规则可以限制格式、大小、配方、视觉变化、SSIM、矩形区域和位图 mask。违反策略时
 命令以状态码 1 退出。
 
+在 Pull Request workflow 中加入带版本的 composite Action：
+
+```yaml
+- uses: actions/checkout@v4
+	with:
+		fetch-depth: 0
+- uses: zhao-xuan/PixLog@v0.1.1
+	with:
+		policy: .pixlog-policy.json
+```
+
+完整 job 见 [examples/pixlog-check.yml](examples/pixlog-check.yml)。
+
 GitHub Actions 会对每次向 `main` 的 push 和 Pull Request 执行格式检查、测试、
 `go vet`，并构建两个命令。成功运行后会保留 Linux、macOS 和 Windows 的可下载
 产物七天。
@@ -330,12 +350,12 @@ GitHub Actions 会对每次向 `main` 的 push 和 Pull Request 执行格式检�
 `main` 检查通过后，维护者可以推送语义化版本标签来发布：
 
 ```bash
-git tag -a v0.1.0 -m "PixLog v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "PixLog v0.1.1"
+git push origin v0.1.1
 ```
 
 发布工作流会再次验证仓库，构建 amd64 与 arm64 压缩包，生成 SHA-256 校验文件，
-并发布带自动生成说明的 GitHub Release。带后缀的标签（例如 `v0.1.0-rc.1`）会成为
+并发布带自动生成说明的 GitHub Release。带后缀的标签（例如 `v0.1.1-rc.1`）会成为
 预发布版本。
 
 ## 命令范围

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/pixlog/pixlog/internal/imaging"
+	"github.com/zhao-xuan/PixLog/internal/imaging"
 )
 
 func TestGitRepositoryStatusAndDiffs(t *testing.T) {

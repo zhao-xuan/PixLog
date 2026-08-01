@@ -1,7 +1,8 @@
 # PixLog Launch Copy
 
-Replace `<DEMO_URL>` after publishing the standalone demo repository. Use MP4 on
-platforms that do not autoplay GitHub GIFs.
+The runnable demo lives in the main repository at
+`https://github.com/zhao-xuan/PixLog/tree/main/demo`. Use MP4 on platforms that
+do not autoplay GitHub GIFs.
 
 ## Show HN
 
@@ -24,11 +25,11 @@ The core, file/HTTP Batch transfer, PNG/JPEG/GIF visual diff, recipe capture, vi
 blame and policy checks work today. A review UI, direct cloud adapters and hosted
 collaboration do not exist yet.
 
-Install: `brew install zhao-xuan/tap/pixlog`
+Install: `brew install zhao-xuan/tap/pixlog chafa`
 
 Repository: https://github.com/zhao-xuan/PixLog
 
-Runnable demo: `<DEMO_URL>`
+Runnable demo: https://github.com/zhao-xuan/PixLog/tree/main/demo
 
 I would especially value feedback from design engineers, game/creative tooling
 teams, and people managing generated images in Git.
@@ -51,11 +52,11 @@ Git 很擅长代码历史，但面对 PNG/JPEG 往往只能告诉你“二进制
 目前 CLI、Git filter、file/HTTP Batch、PNG/JPEG/GIF visual diff、recipe、blame 和
 策略检查已经可用；本地 review UI、直接云存储适配器和托管协作仍在规划中。
 
-安装：`brew install zhao-xuan/tap/pixlog`
+安装：`brew install zhao-xuan/tap/pixlog chafa`
 
 项目：https://github.com/zhao-xuan/PixLog
 
-可运行演示：`<DEMO_URL>`
+可运行演示：https://github.com/zhao-xuan/PixLog/tree/main/demo
 
 希望找到正在用 Git 管理设计素材、游戏资源或 AI 图片的开发者/设计工程师做真实试用。
 
@@ -78,7 +79,7 @@ PNG/JPEG/GIF. Feedback on real repository workflows is more useful to me than st
 
 Repo: https://github.com/zhao-xuan/PixLog
 
-Demo: `<DEMO_URL>`
+Demo: https://github.com/zhao-xuan/PixLog/tree/main/demo
 
 ## ComfyUI / AI Creator Community
 
@@ -96,7 +97,7 @@ before/after recipes are always labeled low-trust.
 
 Repo: https://github.com/zhao-xuan/PixLog
 
-Runnable demo: `<DEMO_URL>`
+Runnable demo: https://github.com/zhao-xuan/PixLog/tree/main/demo
 
 ## Short Posts
 

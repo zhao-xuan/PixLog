@@ -4,9 +4,9 @@ VERSION ?= 0.1.0-dev
 GOOS ?= $(shell go env GOOS)
 GOARCH ?= $(shell go env GOARCH)
 DIST_DIR ?= dist
-LDFLAGS ?= -X github.com/pixlog/pixlog/internal/cli.Version=$(VERSION)
+LDFLAGS ?= -X github.com/zhao-xuan/PixLog/internal/cli.Version=$(VERSION)
 
-.PHONY: build package test vet check install marketing-demo marketing-record clean
+.PHONY: build package test vet check install demo marketing-record clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o $(PIXLOG_BINARY) ./cmd/pixlog
@@ -26,8 +26,8 @@ check: test vet build
 install:
 	go install ./cmd/pixlog ./cmd/git-pixlog
 
-marketing-demo: build
-	bash scripts/marketing/export-demo.sh --force
+demo: build
+	PIXLOG_BIN="$(CURDIR)/$(PIXLOG_BINARY)" bash demo/setup.sh --force
 
 marketing-record: build
 	bash scripts/marketing/record-demos.sh

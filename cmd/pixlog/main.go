@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/pixlog/pixlog/internal/cli"
+	"github.com/zhao-xuan/PixLog/internal/cli"
 )
 
 func main() {

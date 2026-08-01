@@ -54,11 +54,18 @@ The stills use the same deterministic ImageMagick operations as the recordings.
 Source and license details are documented in
 [marketing/assets/sources/README.md](marketing/assets/sources/README.md).
 
+Run the complete demo in this repository:
+
 ```bash
-brew install zhao-xuan/tap/pixlog
-pixlog init
-pixlog diff --staged
+git clone https://github.com/zhao-xuan/PixLog.git
+cd PixLog
+brew install zhao-xuan/tap/pixlog chafa imagemagick
+bash demo/setup.sh
+cd demo/workspace && pixlog diff HEAD~1 HEAD -- assets/hero.png
 ```
+
+See [`demo/`](demo/README.md) for visual blame, AI provenance, and the
+intentionally failing policy check.
 
 PixLog is a Git-compatible media and provenance layer for image assets. Git owns
 the index, commits, branches, merges, and remotes. PixLog adds:
@@ -95,10 +102,11 @@ make build
 ./bin/pixlog version
 ```
 
-Install both command entry points into `GOBIN`:
+Install both command entry points into `GOBIN` from the canonical module:
 
 ```bash
-go install ./cmd/pixlog ./cmd/git-pixlog
+go install github.com/zhao-xuan/PixLog/cmd/pixlog@latest
+go install github.com/zhao-xuan/PixLog/cmd/git-pixlog@latest
 ```
 
 With `git-pixlog` on `PATH`, `git pixlog diff` is equivalent to
@@ -338,6 +346,19 @@ pixlog check --range origin/main...HEAD
 Rules can constrain format, size, recipe presence, visual change, SSIM, rectangular
 regions, and bitmap masks. A violation exits with status 1.
 
+Add the versioned composite Action to a pull-request workflow:
+
+```yaml
+- uses: actions/checkout@v4
+   with:
+      fetch-depth: 0
+- uses: zhao-xuan/PixLog@v0.1.1
+   with:
+      policy: .pixlog-policy.json
+```
+
+See [examples/pixlog-check.yml](examples/pixlog-check.yml) for a complete job.
+
 GitHub Actions runs formatting checks, tests, `go vet`, and builds both commands
 for every push and pull request to `main`. Successful runs retain downloadable
 Linux, macOS, and Windows artifacts for seven days.
@@ -346,13 +367,13 @@ After `main` is green, maintainers can publish a release by pushing a semantic
 version tag:
 
 ```bash
-git tag -a v0.1.0 -m "PixLog v0.1.0"
-git push origin v0.1.0
+git tag -a v0.1.1 -m "PixLog v0.1.1"
+git push origin v0.1.1
 ```
 
 The release workflow verifies the repository again, builds amd64 and arm64
 archives, generates SHA-256 checksums, and publishes a GitHub Release with
-generated notes. Tags containing a suffix such as `v0.1.0-rc.1` become
+generated notes. Tags containing a suffix such as `v0.1.1-rc.1` become
 pre-releases.
 
 ## Command Surface

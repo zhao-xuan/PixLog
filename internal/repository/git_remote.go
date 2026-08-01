@@ -13,7 +13,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/pixlog/pixlog/internal/recipe"
+	"github.com/zhao-xuan/PixLog/internal/recipe"
 )
 
 type GitRefUpdate struct {

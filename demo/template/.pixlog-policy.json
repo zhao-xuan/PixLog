@@ -1,0 +1,25 @@
+{
+  "schema": "pixlog.policy/v1",
+  "rules": [
+    {
+      "asset": "assets/hero.png",
+      "allowed_formats": ["png"],
+      "max_file_size": 2097152,
+      "max_visual_change": 0.03,
+      "min_ssim": 0.96,
+      "allowed_change_regions": [
+        {
+          "x": 700,
+          "y": 110,
+          "width": 150,
+          "height": 80
+        }
+      ]
+    },
+    {
+      "asset": "assets/ai-poster.png",
+      "allowed_formats": ["png"],
+      "require_recipe": true
+    }
+  ]
+}
